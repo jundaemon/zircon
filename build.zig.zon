@@ -1,7 +1,7 @@
 .{
-    .name = .autograd,
+    .name = .tinygrad,
     .version = "0.0.0",
-    .fingerprint = 0x8b5fa3a88f7e060b, // Changing this has security and trust implications.
+    .fingerprint = 0x52972982b2c79e3c,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
