@@ -1,14 +1,13 @@
 const std = @import("std");
-
 const math = std.math;
+const mem = std.mem;
+const Io = std.Io;
 const Random = std.Random;
 
-fn uni_float(rand: Random) f32 {
-    return rand.float(f32) * 2 - 1;
-}
+const init = @import("init");
+const uniform_float = init.uniform_float;
 
 pub const Activation = enum { none, tanh };
-pub const LossFn = enum { mse };
 pub const Optimizer = enum { sgd };
 
 fn Neuron(
@@ -29,9 +28,13 @@ fn Neuron(
 
         fn init(rand: Random) Self {
             var weight: [in]f32 = undefined;
-            for (0..in) |i| weight[i] = uni_float(rand);
+            for (0..in) |i| weight[i] = uniform_float(rand);
 
-            return .{ .weight = weight, .bias = uni_float(rand) };
+            return .{ .weight = weight, .bias = uniform_float(rand) };
+        }
+
+        fn load(weight: [in]f32, bias: f32) Self {
+            return .{ .weight = weight, .bias = bias };
         }
 
         fn forward(self: *Self, input: @Vector(in, f32)) f32 {
@@ -94,6 +97,13 @@ fn Layer(
             return .{ .neurons = neurons };
         }
 
+        fn load(weight: [out][in]f32, bias: [out]f32) Self {
+            var neurons: [out]Neuron(in, activ, optim, lr) = undefined;
+            for (0..out) |i| neurons[i] = .load(weight[i], bias[i]);
+
+            return .{ .neurons = neurons };
+        }
+
         fn forward(self: *Self, input: @Vector(in, f32)) @Vector(out, f32) {
             var outs: [out]f32 = undefined;
             for (0..out) |i| outs[i] = self.neurons[i].forward(input);
@@ -123,7 +133,6 @@ pub fn MLP(
     comptime n: usize,
     comptime outs: [n]usize,
     comptime activ: [n]Activation,
-    comptime loss_fn: LossFn,
     comptime optim: Optimizer,
     comptime lr: f32,
     comptime seed: u64,
@@ -147,7 +156,6 @@ pub fn MLP(
         const Self = @This();
 
         layers: Layers,
-        loss_grad: @Vector(dims[n], f32) = @splat(0),
 
         pub fn init() Self {
             var prng: Random.DefaultPrng = .init(seed);
@@ -155,6 +163,33 @@ pub fn MLP(
 
             var layers: Layers = undefined;
             inline for (0..n) |i| layers[i] = .init(rand);
+
+            return .{ .layers = layers };
+        }
+
+        pub fn load(io: Io, path: []const u8) !Self {
+            var file: Io.File = try Io.Dir.cwd().openFile(io, path, .{});
+            defer file.close(io);
+
+            var buf: [1_024]u8 = undefined;
+            var reader: Io.File.Reader = file.reader(io, &buf);
+            const interface = &reader.interface;
+
+            var layers: Layers = undefined;
+            inline for (0..n) |i| {
+                const out = dims[i + 1];
+
+                var weight_bytes: [out * dims[i] * 4]u8 = undefined;
+                try interface.readSliceAll(&weight_bytes);
+
+                var bias_bytes: [out * 4]u8 = undefined;
+                try interface.readSliceAll(&bias_bytes);
+
+                layers[i] = .load(
+                    mem.bytesToValue([out][dims[i]]f32, &weight_bytes),
+                    mem.bytesToValue([out]f32, &bias_bytes),
+                );
+            }
 
             return .{ .layers = layers };
         }
@@ -172,23 +207,12 @@ pub fn MLP(
             return inc_outs[n - 1];
         }
 
-        pub fn loss(self: *Self, pred: @Vector(dims[n], f32), actual: @Vector(dims[n], f32)) f32 {
-            switch (loss_fn) {
-                .mse => {
-                    var abs_err: @Vector(dims[n], f32) = pred - actual;
-                    self.loss_grad = @as(@Vector(dims[n], f32), @splat(2)) * abs_err / @as(@Vector(dims[n], f32), @splat(dims[n]));
-                    abs_err *= abs_err;
-                    return @reduce(.Add, abs_err) / dims[n];
-                },
-            }
-        }
-
-        pub fn backward(self: *Self) void {
+        pub fn backward(self: *Self, loss_grad: @Vector(dims[n], f32)) void {
             var inc_in_grads: Ins = undefined;
             inline for (0..n) |i| {
                 const rev_i = n - i - 1;
                 if (rev_i == n - 1) {
-                    inc_in_grads[rev_i] = self.layers[rev_i].backward(self.loss_grad);
+                    inc_in_grads[rev_i] = self.layers[rev_i].backward(loss_grad);
                 } else {
                     inc_in_grads[rev_i] = self.layers[rev_i].backward(inc_in_grads[rev_i + 1]);
                 }
@@ -201,6 +225,31 @@ pub fn MLP(
 
         pub fn zero_grad(self: *Self) void {
             inline for (0..n) |i| self.layers[i].zero_grad();
+        }
+
+        pub fn save(self: Self, io: Io, path: []const u8) !void {
+            var file: Io.File = try Io.Dir.cwd().createFile(io, path, .{});
+            defer file.close(io);
+
+            var buf: [1_024]u8 = undefined;
+            var writer: Io.File.Writer = file.writer(io, &buf);
+            const interface = &writer.interface;
+
+            inline for (0..n, self.layers) |i, layer| {
+                const out = layer.neurons.len;
+
+                var weight: [out][dims[i]]f32 = undefined;
+                var bias: [out]f32 = undefined;
+                for (0..out, layer.neurons) |j, neuron| {
+                    weight[j] = neuron.weight;
+                    bias[j] = neuron.bias;
+                }
+
+                try interface.writeAll(mem.asBytes(&weight));
+                try interface.writeAll(mem.asBytes(&bias));
+            }
+
+            try interface.flush();
         }
     };
 }
