@@ -10,74 +10,6 @@ const uniform_float = init.uniform_float;
 pub const Activation = enum { none, tanh };
 pub const Optimizer = enum { sgd };
 
-fn Neuron(
-    comptime in: usize,
-    comptime activ: Activation,
-    comptime optim: Optimizer,
-    comptime lr: f32,
-) type {
-    return struct {
-        const Self = @This();
-
-        input: @Vector(in, f32) = @splat(0),
-        weight: @Vector(in, f32),
-        weight_grad: @Vector(in, f32) = @splat(0),
-        bias: f32,
-        bias_grad: f32 = 0,
-        out: f32 = 0,
-
-        fn init(rand: Random) Self {
-            var weight: [in]f32 = undefined;
-            for (0..in) |i| weight[i] = uniform_float(rand);
-
-            return .{ .weight = weight, .bias = uniform_float(rand) };
-        }
-
-        fn load(weight: [in]f32, bias: f32) Self {
-            return .{ .weight = weight, .bias = bias };
-        }
-
-        fn forward(self: *Self, input: @Vector(in, f32)) f32 {
-            self.input = input;
-
-            const pre_activ = @reduce(.Add, self.weight * input) + self.bias;
-            self.out = switch (activ) {
-                .tanh => math.tanh(pre_activ),
-                .none => pre_activ,
-            };
-
-            return self.out;
-        }
-
-        fn backward(self: *Self, out_grad: f32) @Vector(in, f32) {
-            const pre_activ_grad = switch (activ) {
-                .none => out_grad,
-                .tanh => out_grad * (1 - math.pow(f32, self.out, 2)),
-            };
-            const vec_pre_activ_grad = @as(@Vector(in, f32), @splat(pre_activ_grad));
-
-            self.weight_grad += self.input * vec_pre_activ_grad;
-            self.bias_grad += pre_activ_grad;
-
-            return self.weight * vec_pre_activ_grad;
-        }
-
-        fn step(self: *Self) void {
-            switch (optim) {
-                .sgd => {
-                    self.weight -= @as(@Vector(in, f32), @splat(lr)) * self.weight_grad;
-                    self.bias -= lr * self.bias_grad;
-                },
-            }
-        }
-
-        fn zero_grad(self: *Self) void {
-            self.weight_grad = @as(@Vector(in, f32), @splat(0));
-            self.bias_grad = 0;
-        }
-    };
-}
-
 fn Layer(
     comptime in: usize,
     comptime out: usize,
@@ -86,44 +18,78 @@ fn Layer(
     comptime lr: f32,
 ) type {
     return struct {
+        weights: [out][in]f32,
+        weights_grad: [out][in]f32 = [_][in]f32{@splat(0)} ** out,
+        biases: [out]f32,
+        biases_grad: [out]f32 = @splat(0),
+        outs: [out]f32 = @splat(0),
+        input: [in]f32 = @splat(0),
+
         const Self = @This();
-
-        neurons: [out]Neuron(in, activ, optim, lr),
-
         fn init(rand: Random) Self {
-            var neurons: [out]Neuron(in, activ, optim, lr) = undefined;
-            for (0..out) |i| neurons[i] = .init(rand);
+            var weights: [out][in]f32 = undefined;
+            var biases: [out]f32 = undefined;
+            for (0..out) |i| {
+                var weight: [in]f32 = undefined;
+                for (0..in) |j| weight[j] = uniform_float(rand);
 
-            return .{ .neurons = neurons };
+                weights[i] = weight;
+                biases[i] = uniform_float(rand);
+            }
+
+            return .{ .weights = weights, .biases = biases };
         }
 
-        fn load(weight: [out][in]f32, bias: [out]f32) Self {
-            var neurons: [out]Neuron(in, activ, optim, lr) = undefined;
-            for (0..out) |i| neurons[i] = .load(weight[i], bias[i]);
-
-            return .{ .neurons = neurons };
+        fn load(weights: [out][in]f32, biases: [out]f32) Self {
+            return .{ .weights = weights, .biases = biases };
         }
 
-        fn forward(self: *Self, input: @Vector(in, f32)) @Vector(out, f32) {
+        fn forward(self: *Self, input: [in]f32) [out]f32 {
+            self.input = input;
+
             var outs: [out]f32 = undefined;
-            for (0..out) |i| outs[i] = self.neurons[i].forward(input);
+            for (0..out) |i| {
+                const vec_input: @Vector(in, f32) = input;
+                const pre_activ = @reduce(.Add, vec_input * self.weights[i]) + self.biases[i];
+                switch (activ) {
+                    .none => outs[i] = pre_activ,
+                    .tanh => outs[i] = math.tanh(pre_activ),
+                }
+            }
 
+            self.outs = outs;
             return outs;
         }
 
-        fn backward(self: *Self, out_grad: @Vector(out, f32)) @Vector(in, f32) {
-            var in_grads: @Vector(in, f32) = @splat(0);
-            inline for (0..out) |i| in_grads += self.neurons[i].backward(out_grad[i]);
+        fn backward(self: *Self, out_grad: [out]f32) [in]f32 {
+            var vec_in_grad: @Vector(in, f32) = @splat(0);
+            for (0..out) |i| {
+                const pre_activ_grad = switch (activ) {
+                    .none => out_grad[i],
+                    .tanh => out_grad[i] * (1 - math.pow(f32, self.outs[i], 2)),
+                };
+                const vec_pre_activ_grad: @Vector(in, f32) = @splat(pre_activ_grad);
+                self.weights_grad[i] = self.weights_grad[i] + self.input * vec_pre_activ_grad;
+                self.biases_grad[i] += pre_activ_grad;
 
-            return in_grads;
+                vec_in_grad += self.weights[i] * vec_pre_activ_grad;
+            }
+
+            return vec_in_grad;
         }
 
         fn step(self: *Self) void {
-            for (0..out) |i| self.neurons[i].step();
+            switch (optim) {
+                .sgd => {
+                    for (0..out) |i| self.weights[i] = self.weights[i] - @as(@Vector(in, f32), @splat(lr)) * self.weights_grad;
+                    self.biases = self.biases - @as(@Vector(out, f32), @splat(lr)) * self.biases_grad;
+                },
+            }
         }
 
         fn zero_grad(self: *Self) void {
-            for (0..out) |i| self.neurons[i].zero_grad();
+            self.weights_grad = [_][in]f32{@splat(0)} ** out;
+            self.biases_grad = @splat(0);
         }
     };
 }
@@ -144,8 +110,8 @@ pub fn MLP(
     var in_types: [n]type = undefined;
     for (0..n) |i| {
         layer_types[i] = Layer(dims[i], dims[i + 1], activ[i], optim, lr);
-        out_types[i] = @Vector(outs[i], f32);
-        in_types[i] = @Vector(dims[i], f32);
+        out_types[i] = [outs[i]]f32;
+        in_types[i] = [dims[i]]f32;
     }
 
     const Layers = @Tuple(&layer_types);
@@ -194,7 +160,30 @@ pub fn MLP(
             return .{ .layers = layers };
         }
 
-        pub fn forward(self: *Self, input: @Vector(in, f32)) @Vector(dims[n], f32) {
+        pub fn save(self: Self, io: Io, path: []const u8) !void {
+            var file: Io.File = try Io.Dir.cwd().createFile(io, path, .{});
+            defer file.close(io);
+
+            var buf: [1_024]u8 = undefined;
+            var writer: Io.File.Writer = file.writer(io, &buf);
+            const interface = &writer.interface;
+
+            inline for (0..n) |i| {
+                var weight: [dims[i + 1]][dims[i]]f32 = undefined;
+                var bias: [dims[i + 1]]f32 = undefined;
+                for (0..dims[i + 1]) |j| {
+                    weight[j] = self.layers[i].weights[j];
+                    bias[j] = self.layers[i].biases[j];
+                }
+
+                try interface.writeAll(mem.asBytes(&weight));
+                try interface.writeAll(mem.asBytes(&bias));
+            }
+
+            try interface.flush();
+        }
+
+        pub fn forward(self: *Self, input: [in]f32) [dims[n]]f32 {
             var inc_outs: Outs = undefined;
             inline for (0..n) |i| {
                 if (i == 0) {
@@ -207,7 +196,7 @@ pub fn MLP(
             return inc_outs[n - 1];
         }
 
-        pub fn backward(self: *Self, loss_grad: @Vector(dims[n], f32)) void {
+        pub fn backward(self: *Self, loss_grad: [dims[n]]f32) void {
             var inc_in_grads: Ins = undefined;
             inline for (0..n) |i| {
                 const rev_i = n - i - 1;
@@ -225,31 +214,6 @@ pub fn MLP(
 
         pub fn zero_grad(self: *Self) void {
             inline for (0..n) |i| self.layers[i].zero_grad();
-        }
-
-        pub fn save(self: Self, io: Io, path: []const u8) !void {
-            var file: Io.File = try Io.Dir.cwd().createFile(io, path, .{});
-            defer file.close(io);
-
-            var buf: [1_024]u8 = undefined;
-            var writer: Io.File.Writer = file.writer(io, &buf);
-            const interface = &writer.interface;
-
-            inline for (0..n, self.layers) |i, layer| {
-                const out = layer.neurons.len;
-
-                var weight: [out][dims[i]]f32 = undefined;
-                var bias: [out]f32 = undefined;
-                for (0..out, layer.neurons) |j, neuron| {
-                    weight[j] = neuron.weight;
-                    bias[j] = neuron.bias;
-                }
-
-                try interface.writeAll(mem.asBytes(&weight));
-                try interface.writeAll(mem.asBytes(&bias));
-            }
-
-            try interface.flush();
         }
     };
 }
