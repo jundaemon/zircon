@@ -47,18 +47,15 @@ fn Layer(
         fn forward(self: *Self, input: [in]f32) [out]f32 {
             self.input = input;
 
-            var outs: [out]f32 = undefined;
             for (0..out) |i| {
-                const vec_input: @Vector(in, f32) = input;
-                const pre_activ = @reduce(.Add, vec_input * self.weights[i]) + self.biases[i];
-                switch (activ) {
-                    .none => outs[i] = pre_activ,
-                    .tanh => outs[i] = math.tanh(pre_activ),
-                }
+                const pre_activ = @reduce(.Add, @as(@Vector(in, f32), input) * self.weights[i]) + self.biases[i];
+                self.outs[i] = switch (activ) {
+                    .none => pre_activ,
+                    .tanh => math.tanh(pre_activ),
+                };
             }
 
-            self.outs = outs;
-            return outs;
+            return self.outs;
         }
 
         fn backward(self: *Self, out_grad: [out]f32) [in]f32 {
@@ -169,9 +166,11 @@ pub fn MLP(
             const interface = &writer.interface;
 
             inline for (0..n) |i| {
-                var weight: [dims[i + 1]][dims[i]]f32 = undefined;
-                var bias: [dims[i + 1]]f32 = undefined;
-                for (0..dims[i + 1]) |j| {
+                const out = dims[i + 1];
+
+                var weight: [out][dims[i]]f32 = undefined;
+                var bias: [out]f32 = undefined;
+                for (0..out) |j| {
                     weight[j] = self.layers[i].weights[j];
                     bias[j] = self.layers[i].biases[j];
                 }
