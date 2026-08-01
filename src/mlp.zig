@@ -269,8 +269,8 @@ test "mlp 2" {
     model.backward(loss_grad_1);
     model.step();
     try model.save(io, "tests/cases/mlp_2_updated.bin");
-
     model.zero_grad();
+
     const pred_2 = model.forward(.{ 1, 2, 3, 4 });
     const loss_2, const loss_grad_2 = model.loss(pred_2, .{ 0.1, 0.2, 0.3, 0.4, 0.5 });
     var buf_2: [10]u8 = undefined;
