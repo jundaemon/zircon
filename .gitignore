@@ -1,2 +1,6 @@
 zig-out/
 .zig-cache/
+tests/cases/
+tests/.venv/
+tests/__pycache__/
+tests/.pytest_cache/

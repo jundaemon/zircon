@@ -1,13 +1,16 @@
 const std = @import("std");
 const math = std.math;
 const mem = std.mem;
-const Io = std.Io;
+const fmt = std.fmt;
+const testing = std.testing;
 const Random = std.Random;
+const Io = std.Io;
 
 const init = @import("init");
 const uniform_float = init.uniform_float;
 
 pub const Activation = enum { none, tanh };
+pub const LossFunc = enum { mse };
 pub const Optimizer = enum { sgd };
 
 fn Layer(
@@ -78,7 +81,7 @@ fn Layer(
         fn step(self: *Self) void {
             switch (optim) {
                 .sgd => {
-                    for (0..out) |i| self.weights[i] = self.weights[i] - @as(@Vector(in, f32), @splat(lr)) * self.weights_grad;
+                    for (0..out) |i| self.weights[i] = self.weights[i] - @as(@Vector(in, f32), @splat(lr)) * self.weights_grad[i];
                     self.biases = self.biases - @as(@Vector(out, f32), @splat(lr)) * self.biases_grad;
                 },
             }
@@ -96,6 +99,7 @@ pub fn MLP(
     comptime n: usize,
     comptime outs: [n]usize,
     comptime activ: [n]Activation,
+    comptime loss_func: LossFunc,
     comptime optim: Optimizer,
     comptime lr: f32,
     comptime seed: u64,
@@ -164,7 +168,6 @@ pub fn MLP(
             var buf: [1_024]u8 = undefined;
             var writer: Io.File.Writer = file.writer(io, &buf);
             const interface = &writer.interface;
-
             inline for (0..n) |i| {
                 const out = dims[i + 1];
 
@@ -195,6 +198,19 @@ pub fn MLP(
             return inc_outs[n - 1];
         }
 
+        pub fn loss(self: Self, predicted: [dims[n]]f32, expected: [dims[n]]f32) struct { f32, [dims[n]]f32 } {
+            _ = self;
+            switch (loss_func) {
+                .mse => {
+                    const ae = @as(@Vector(dims[n], f32), predicted) - expected;
+                    return .{
+                        @reduce(.Add, ae * ae) / dims[n],
+                        ae * @as(@Vector(dims[n], f32), @splat(2 / dims[n])),
+                    };
+                },
+            }
+        }
+
         pub fn backward(self: *Self, loss_grad: [dims[n]]f32) void {
             var inc_in_grads: Ins = undefined;
             inline for (0..n) |i| {
@@ -215,4 +231,53 @@ pub fn MLP(
             inline for (0..n) |i| self.layers[i].zero_grad();
         }
     };
+}
+
+test "mlp 1" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_1_loss.txt", .{});
+    defer file.close(io);
+
+    var model: MLP(3, 3, .{ 10, 15, 3 }, .{ .tanh, .tanh, .none }, .mse, .sgd, 0.0001, 1) = .init();
+    try model.save(io, "tests/cases/mlp_1_init.bin");
+
+    const pred = model.forward(.{ 1, 2, 3 });
+    const loss, const loss_grad = model.loss(pred, .{ 0.1, 0.2, 0.3 });
+    var buf: [10]u8 = undefined;
+    const loss_str = try fmt.bufPrint(&buf, "{d}", .{loss});
+    try file.writeStreamingAll(io, loss_str);
+
+    model.backward(loss_grad);
+    model.step();
+    try model.save(io, "tests/cases/mlp_1_final.bin");
+}
+
+test "mlp 2" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_2_loss.txt", .{});
+    defer file.close(io);
+
+    var model: MLP(4, 4, .{ 7, 10, 11, 5 }, .{ .tanh, .tanh, .tanh, .none }, .mse, .sgd, 0.0001, 1) = .init();
+    try model.save(io, "tests/cases/mlp_2_init.bin");
+
+    const pred_1 = model.forward(.{ 1, 2, 3, 4 });
+    const loss_1, const loss_grad_1 = model.loss(pred_1, .{ 0.1, 0.2, 0.3, 0.4, 0.5 });
+    var buf_1: [10]u8 = undefined;
+    const loss_1_str = try fmt.bufPrint(&buf_1, "{d}\n", .{loss_1});
+    try file.writeStreamingAll(io, loss_1_str);
+
+    model.backward(loss_grad_1);
+    model.step();
+    try model.save(io, "tests/cases/mlp_2_updated.bin");
+
+    model.zero_grad();
+    const pred_2 = model.forward(.{ 1, 2, 3, 4 });
+    const loss_2, const loss_grad_2 = model.loss(pred_2, .{ 0.1, 0.2, 0.3, 0.4, 0.5 });
+    var buf_2: [10]u8 = undefined;
+    const loss_2_str = try fmt.bufPrint(&buf_2, "{d}\n", .{loss_2});
+    try file.writeStreamingAll(io, loss_2_str);
+
+    model.backward(loss_grad_2);
+    model.step();
+    try model.save(io, "tests/cases/mlp_2_final.bin");
 }

@@ -1,0 +1,11 @@
+[project]
+name = "tests"
+version = "0.1.0"
+description = "tests against torch"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.5.1",
+    "pytest>=9.1.1",
+    "torch>=2.13.0",
+]

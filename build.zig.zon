@@ -1,7 +1,7 @@
 .{
-    .name = .tinygrad,
+    .name = .nanograd,
     .version = "0.0.0",
-    .fingerprint = 0x52972982b2c79e3c,
+    .fingerprint = 0x63a328243d6b0d78,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
