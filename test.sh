@@ -1,6 +1,11 @@
 #!/bin/bash
 
+rm -rf tests/cases/
+mkdir tests/cases/
+echo "previous tests cleared"
+
 zig build test
-echo "Tests built"
+echo "new tests built"
+
 cd tests
 uv run pytest .

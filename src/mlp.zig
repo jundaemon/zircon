@@ -9,7 +9,7 @@ const Io = std.Io;
 const init = @import("init");
 const uniform_float = init.uniform_float;
 
-pub const Activation = enum { none, tanh };
+pub const Activation = enum { none, tanh, relu };
 pub const LossFunc = enum { mse };
 pub const Optimizer = enum { sgd };
 
@@ -55,6 +55,7 @@ fn Layer(
                 self.outs[i] = switch (activ) {
                     .none => pre_activ,
                     .tanh => math.tanh(pre_activ),
+                    .relu => if (pre_activ > 0) pre_activ else 0,
                 };
             }
 
@@ -67,6 +68,7 @@ fn Layer(
                 const pre_activ_grad = switch (activ) {
                     .none => out_grad[i],
                     .tanh => out_grad[i] * (1 - math.pow(f32, self.outs[i], 2)),
+                    .relu => out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0,
                 };
                 const vec_pre_activ_grad: @Vector(in, f32) = @splat(pre_activ_grad);
                 self.weights_grad[i] = self.weights_grad[i] + self.input * vec_pre_activ_grad;
@@ -233,51 +235,34 @@ pub fn MLP(
     };
 }
 
-test "mlp 1" {
+test "mlp" {
     const io = testing.io;
-    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_1_loss.txt", .{});
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_loss.txt", .{});
     defer file.close(io);
 
-    var model: MLP(3, 3, .{ 10, 15, 3 }, .{ .tanh, .tanh, .none }, .mse, .sgd, 0.0001, 1) = .init();
-    try model.save(io, "tests/cases/mlp_1_init.bin");
+    var model: MLP(2, 5, .{ 3, 5, 7, 4, 1 }, .{ .tanh, .relu, .tanh, .relu, .none }, .mse, .sgd, 0.0001, 1) = .init();
+    try model.save(io, "tests/cases/mlp_init_weights.bin");
 
-    const pred = model.forward(.{ 1, 2, 3 });
-    const loss, const loss_grad = model.loss(pred, .{ 0.1, 0.2, 0.3 });
+    const pred = model.forward(.{ 1, 2 });
+    const loss, const loss_grad = model.loss(pred, .{0.1});
+
     var buf: [10]u8 = undefined;
-    const loss_str = try fmt.bufPrint(&buf, "{d}", .{loss});
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
     try file.writeStreamingAll(io, loss_str);
 
     model.backward(loss_grad);
     model.step();
-    try model.save(io, "tests/cases/mlp_1_final.bin");
-}
-
-test "mlp 2" {
-    const io = testing.io;
-    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_2_loss.txt", .{});
-    defer file.close(io);
-
-    var model: MLP(4, 4, .{ 7, 10, 11, 5 }, .{ .tanh, .tanh, .tanh, .none }, .mse, .sgd, 0.0001, 1) = .init();
-    try model.save(io, "tests/cases/mlp_2_init.bin");
-
-    const pred_1 = model.forward(.{ 1, 2, 3, 4 });
-    const loss_1, const loss_grad_1 = model.loss(pred_1, .{ 0.1, 0.2, 0.3, 0.4, 0.5 });
-    var buf_1: [10]u8 = undefined;
-    const loss_1_str = try fmt.bufPrint(&buf_1, "{d}\n", .{loss_1});
-    try file.writeStreamingAll(io, loss_1_str);
-
-    model.backward(loss_grad_1);
-    model.step();
-    try model.save(io, "tests/cases/mlp_2_updated.bin");
     model.zero_grad();
+    try model.save(io, "tests/cases/mlp_updated_weights.bin");
 
-    const pred_2 = model.forward(.{ 1, 2, 3, 4 });
-    const loss_2, const loss_grad_2 = model.loss(pred_2, .{ 0.1, 0.2, 0.3, 0.4, 0.5 });
-    var buf_2: [10]u8 = undefined;
-    const loss_2_str = try fmt.bufPrint(&buf_2, "{d}\n", .{loss_2});
-    try file.writeStreamingAll(io, loss_2_str);
+    const pred_prime = model.forward(.{ 3, 2 });
+    const loss_prime, const loss_grad_prime = model.loss(pred_prime, .{0.2});
 
-    model.backward(loss_grad_2);
+    var buf_prime: [10]u8 = undefined;
+    const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
+    try file.writeStreamingAll(io, loss_prime_str);
+
+    model.backward(loss_grad_prime);
     model.step();
-    try model.save(io, "tests/cases/mlp_2_final.bin");
+    try model.save(io, "tests/cases/mlp_final_weights.bin");
 }
