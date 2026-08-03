@@ -6,7 +6,7 @@ const testing = std.testing;
 const Random = std.Random;
 const Io = std.Io;
 
-const lossf = @import("lossf");
+const loss = @import("loss");
 
 pub const Activation = enum { None, Tanh, ReLU };
 pub const Optimizer = enum { SGD };
@@ -274,10 +274,10 @@ test "mlp" {
     try model.save(io, "tests/cases/mlp_init_weights.bin");
 
     const pred = model.forward(.{ 1, 2 });
-    const loss, const loss_grad = lossf.MSE(1, pred, .{0.1});
+    const loss_, const loss_grad = loss.MSE(1, pred, .{0.1});
 
     var buf: [30]u8 = undefined;
-    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss_});
     try file.writeStreamingAll(io, loss_str);
 
     model.backward(loss_grad);
@@ -286,7 +286,7 @@ test "mlp" {
     try model.save(io, "tests/cases/mlp_updated_weights.bin");
 
     const pred_prime = model.forward(.{ 3, 2 });
-    const loss_prime, const loss_grad_prime = lossf.MSE(1, pred_prime, .{0.2});
+    const loss_prime, const loss_grad_prime = loss.MSE(1, pred_prime, .{0.2});
 
     var buf_prime: [30]u8 = undefined;
     const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});

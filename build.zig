@@ -3,8 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const lossf = b.createModule(.{
-        .root_source_file = b.path("src/lossf.zig"),
+    const loss = b.createModule(.{
+        .root_source_file = b.path("src/loss.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "lossf", .module = lossf },
+            .{ .name = "loss", .module = loss },
         },
     });
 
