@@ -6,14 +6,21 @@ const testing = std.testing;
 const Random = std.Random;
 const Io = std.Io;
 
-pub const Activation = enum { none, tanh, relu };
-pub const LossFunc = enum { mse };
-pub const Optimizer = enum { sgd };
+const lossf = @import("lossf");
+
+pub const Activation = enum { None, Tanh, ReLU };
+pub const Optimizer = enum { SGD };
 
 fn randFloat(rand: Random, bound: f32) f32 {
     return rand.float(f32) * bound * 2 - bound;
 }
 
+/// private comptime struct that holds all information needed for forward and backward passes
+/// "in" is the size of input to the layer
+/// "out" is the number of neurons within the layer
+/// "activ" is the activation function for the the layer
+/// "optim" is the optimizer for the network
+/// "lr" is the learning rate for the network
 fn Layer(
     comptime in: usize,
     comptime out: usize,
@@ -30,10 +37,15 @@ fn Layer(
         input: [in]f32 = @splat(0),
 
         const Self = @This();
+
+        /// initializes the weights and biases according to the activation function of the layer
+        /// if the layer uses a symmetric activation function, weights are initialized using Xavier uniform distribution
+        /// if the layer uses an asymmetric activation function, weights are initialized using Kaiming uniform distribution in fan-in mode
+        /// biases are initialized using LeCun uniform distribution regardless
         fn init(rand: Random) Self {
             const w_bound = switch (activ) {
-                .none, .tanh => math.sqrt(6 / @as(f32, in + out)),
-                .relu => math.sqrt(6 / @as(f32, in)),
+                .None, .Tanh => math.sqrt(6 / @as(f32, in + out)),
+                .ReLU => math.sqrt(6 / @as(f32, in)),
             };
             const b_bound = 1 / math.sqrt(@as(f32, in));
 
@@ -54,28 +66,33 @@ fn Layer(
             return .{ .weights = weights, .biases = biases };
         }
 
+        /// performs a forward pass using a = f(z), z = wx + b, where f is the activation function if any
+        /// the output is returned and will be passed on to the next layer
+        /// the input and outputs are saved for use in backpropagation after
         fn forward(self: *Self, input: [in]f32) [out]f32 {
             self.input = input;
 
             for (0..out) |i| {
                 const pre_activ = @reduce(.Add, @as(@Vector(in, f32), input) * self.weights[i]) + self.biases[i];
                 self.outs[i] = switch (activ) {
-                    .none => pre_activ,
-                    .tanh => math.tanh(pre_activ),
-                    .relu => if (pre_activ > 0) pre_activ else 0,
+                    .None => pre_activ,
+                    .Tanh => math.tanh(pre_activ),
+                    .ReLU => if (pre_activ > 0) pre_activ else 0,
                 };
             }
 
             return self.outs;
         }
 
+        /// performs backpropagation on the layer and returns a vector of gradients
+        /// this vector is passed on to the previous layer
         fn backward(self: *Self, out_grad: [out]f32) [in]f32 {
             var vec_in_grad: @Vector(in, f32) = @splat(0);
             for (0..out) |i| {
                 const pre_activ_grad = switch (activ) {
-                    .none => out_grad[i],
-                    .tanh => out_grad[i] * (1 - math.pow(f32, self.outs[i], 2)),
-                    .relu => out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0,
+                    .None => out_grad[i],
+                    .Tanh => out_grad[i] * (1 - math.pow(f32, self.outs[i], 2)),
+                    .ReLU => out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0,
                 };
                 const vec_pre_activ_grad: @Vector(in, f32) = @splat(pre_activ_grad);
 
@@ -90,7 +107,7 @@ fn Layer(
 
         fn step(self: *Self) void {
             switch (optim) {
-                .sgd => {
+                .SGD => {
                     for (0..out) |i| self.weights[i] = self.weights[i] - @as(@Vector(in, f32), @splat(lr)) * self.weights_grad[i];
                     self.biases = self.biases - @as(@Vector(out, f32), @splat(lr)) * self.biases_grad;
                 },
@@ -104,16 +121,26 @@ fn Layer(
     };
 }
 
+/// public comptime struct that serves as a consolidation of all layers
+/// "in" is the size of input to the network
+/// "n" is the number of layers
+/// "outs" is the number of neurons in each layer
+/// "activ" is the activation function used for each layer
+/// "optim" is the optimizer for the network
+/// "lr" is the learning rate for the network
+/// "seed" allows for replicable initialization of weights and biases
 pub fn MLP(
     comptime in: usize,
     comptime n: usize,
     comptime outs: [n]usize,
     comptime activ: [n]Activation,
-    comptime loss_func: LossFunc,
     comptime optim: Optimizer,
     comptime lr: f32,
     comptime seed: u64,
 ) type {
+    if (n < 1) @compileError("model needs at least 1 layer");
+    if (in < 1) @compileError("input should be of size 1 or larger");
+
     const dims = [1]usize{in} ++ outs;
 
     var layer_types: [n]type = undefined;
@@ -133,6 +160,7 @@ pub fn MLP(
         layers: Layers,
 
         const Self = @This();
+
         pub fn init() Self {
             var prng: Random.DefaultPrng = .init(seed);
             const rand = prng.random();
@@ -143,11 +171,14 @@ pub fn MLP(
             return .{ .layers = layers };
         }
 
+        /// reads a given file for the weights and biases for the network incrementally
+        /// based on how it was saved in the "save" method, reading any other file that was not
+        /// created using this library will likely raise an error or lead to garbage weights
         pub fn load(io: Io, path: []const u8) !Self {
             var file: Io.File = try Io.Dir.cwd().openFile(io, path, .{});
             defer file.close(io);
 
-            var buf: [1_024]u8 = undefined;
+            var buf: [4_096]u8 = undefined;
             var reader: Io.File.Reader = file.reader(io, &buf);
             const interface = &reader.interface;
 
@@ -171,11 +202,12 @@ pub fn MLP(
             return .{ .layers = layers };
         }
 
+        /// writes the weights and biases of each layer to the given path as bytes
         pub fn save(self: Self, io: Io, path: []const u8) !void {
             var file: Io.File = try Io.Dir.cwd().createFile(io, path, .{});
             defer file.close(io);
 
-            var buf: [1_024]u8 = undefined;
+            var buf: [4_096]u8 = undefined;
             var writer: Io.File.Writer = file.writer(io, &buf);
             const interface = &writer.interface;
 
@@ -196,6 +228,7 @@ pub fn MLP(
             try interface.flush();
         }
 
+        /// calculates the forward pass through the network
         pub fn forward(self: *Self, input: [in]f32) [dims[n]]f32 {
             var inc_outs: Outs = undefined;
             inline for (0..n) |i| {
@@ -209,19 +242,7 @@ pub fn MLP(
             return inc_outs[n - 1];
         }
 
-        pub fn loss(self: Self, predicted: [dims[n]]f32, expected: [dims[n]]f32) struct { f32, [dims[n]]f32 } {
-            _ = self;
-            switch (loss_func) {
-                .mse => {
-                    const ae = @as(@Vector(dims[n], f32), predicted) - expected;
-                    return .{
-                        @reduce(.Add, ae * ae) / dims[n],
-                        ae * @as(@Vector(dims[n], f32), @splat(2 / dims[n])),
-                    };
-                },
-            }
-        }
-
+        /// performs backpropagation through the network
         pub fn backward(self: *Self, loss_grad: [dims[n]]f32) void {
             var inc_in_grads: Ins = undefined;
             inline for (0..n) |i| {
@@ -249,11 +270,11 @@ test "mlp" {
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_loss.txt", .{});
     defer file.close(io);
 
-    var model: MLP(2, 5, .{ 3, 5, 7, 4, 1 }, .{ .tanh, .relu, .tanh, .relu, .none }, .mse, .sgd, 0.0001, 1) = .init();
+    var model: MLP(2, 5, .{ 3, 5, 7, 4, 1 }, .{ .Tanh, .ReLU, .Tanh, .ReLU, .None }, .SGD, 0.0001, 1) = .init();
     try model.save(io, "tests/cases/mlp_init_weights.bin");
 
     const pred = model.forward(.{ 1, 2 });
-    const loss, const loss_grad = model.loss(pred, .{0.1});
+    const loss, const loss_grad = lossf.MSE(1, pred, .{0.1});
 
     var buf: [30]u8 = undefined;
     const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
@@ -265,7 +286,7 @@ test "mlp" {
     try model.save(io, "tests/cases/mlp_updated_weights.bin");
 
     const pred_prime = model.forward(.{ 3, 2 });
-    const loss_prime, const loss_grad_prime = model.loss(pred_prime, .{0.2});
+    const loss_prime, const loss_grad_prime = lossf.MSE(1, pred_prime, .{0.2});
 
     var buf_prime: [30]u8 = undefined;
     const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
