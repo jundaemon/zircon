@@ -6,12 +6,13 @@ const testing = std.testing;
 const Random = std.Random;
 const Io = std.Io;
 
-const init = @import("init");
-const uniform_float = init.uniform_float;
-
 pub const Activation = enum { none, tanh, relu };
 pub const LossFunc = enum { mse };
 pub const Optimizer = enum { sgd };
+
+fn randFloat(rand: Random, bound: f32) f32 {
+    return rand.float(f32) * bound * 2 - bound;
+}
 
 fn Layer(
     comptime in: usize,
@@ -30,14 +31,20 @@ fn Layer(
 
         const Self = @This();
         fn init(rand: Random) Self {
+            const w_bound = switch (activ) {
+                .none, .tanh => math.sqrt(6 / @as(f32, in + out)),
+                .relu => math.sqrt(6 / @as(f32, in)),
+            };
+            const b_bound = 1 / math.sqrt(@as(f32, in));
+
             var weights: [out][in]f32 = undefined;
             var biases: [out]f32 = undefined;
             for (0..out) |i| {
                 var weight: [in]f32 = undefined;
-                for (0..in) |j| weight[j] = uniform_float(rand);
+                for (0..in) |j| weight[j] = randFloat(rand, w_bound);
 
                 weights[i] = weight;
-                biases[i] = uniform_float(rand);
+                biases[i] = randFloat(rand, b_bound);
             }
 
             return .{ .weights = weights, .biases = biases };
@@ -71,6 +78,7 @@ fn Layer(
                     .relu => out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0,
                 };
                 const vec_pre_activ_grad: @Vector(in, f32) = @splat(pre_activ_grad);
+
                 self.weights_grad[i] = self.weights_grad[i] + self.input * vec_pre_activ_grad;
                 self.biases_grad[i] += pre_activ_grad;
 
@@ -122,10 +130,9 @@ pub fn MLP(
     const Ins = @Tuple(&in_types);
 
     return struct {
-        const Self = @This();
-
         layers: Layers,
 
+        const Self = @This();
         pub fn init() Self {
             var prng: Random.DefaultPrng = .init(seed);
             const rand = prng.random();
@@ -146,16 +153,17 @@ pub fn MLP(
 
             var layers: Layers = undefined;
             inline for (0..n) |i| {
+                const in_ = dims[i];
                 const out = dims[i + 1];
 
-                var weight_bytes: [out * dims[i] * 4]u8 = undefined;
+                var weight_bytes: [out * in_ * 4]u8 = undefined;
                 try interface.readSliceAll(&weight_bytes);
 
                 var bias_bytes: [out * 4]u8 = undefined;
                 try interface.readSliceAll(&bias_bytes);
 
                 layers[i] = .load(
-                    mem.bytesToValue([out][dims[i]]f32, &weight_bytes),
+                    mem.bytesToValue([out][in_]f32, &weight_bytes),
                     mem.bytesToValue([out]f32, &bias_bytes),
                 );
             }
@@ -170,6 +178,7 @@ pub fn MLP(
             var buf: [1_024]u8 = undefined;
             var writer: Io.File.Writer = file.writer(io, &buf);
             const interface = &writer.interface;
+
             inline for (0..n) |i| {
                 const out = dims[i + 1];
 
@@ -246,7 +255,7 @@ test "mlp" {
     const pred = model.forward(.{ 1, 2 });
     const loss, const loss_grad = model.loss(pred, .{0.1});
 
-    var buf: [10]u8 = undefined;
+    var buf: [30]u8 = undefined;
     const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
     try file.writeStreamingAll(io, loss_str);
 
@@ -258,7 +267,7 @@ test "mlp" {
     const pred_prime = model.forward(.{ 3, 2 });
     const loss_prime, const loss_grad_prime = model.loss(pred_prime, .{0.2});
 
-    var buf_prime: [10]u8 = undefined;
+    var buf_prime: [30]u8 = undefined;
     const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
     try file.writeStreamingAll(io, loss_prime_str);
 
