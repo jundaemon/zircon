@@ -72,44 +72,77 @@ fn Layer(
         fn forward(self: *Self, input: [in]f32) [out]f32 {
             self.input = input;
 
+            self.outs = @splat(0);
             for (0..out) |i| {
-                const pre_activ = @reduce(.Add, @as(@Vector(in, f32), input) * self.weights[i]) + self.biases[i];
-                self.outs[i] = switch (activ) {
-                    .None => pre_activ,
-                    .Tanh => math.tanh(pre_activ),
-                    .ReLU => if (pre_activ > 0) pre_activ else 0,
-                };
+                for (0..in) |j| self.outs[i] += input[j] * self.weights[i][j];
+                self.outs[i] += self.biases[i];
+            }
+            switch (activ) {
+                .None => {},
+                .Tanh => {
+                    for (0..out) |i| {
+                        const pre_activ = self.outs[i];
+                        self.outs[i] = math.tanh(pre_activ);
+                    }
+                },
+                .ReLU => {
+                    for (0..out) |i| {
+                        const pre_activ = self.outs[i];
+                        self.outs[i] = if (pre_activ > 0) pre_activ else 0;
+                    }
+                },
             }
 
             return self.outs;
         }
 
-        /// performs backpropagation on the layer and returns a vector of gradients
-        /// this vector is passed on to the previous layer
+        /// performs backpropagation on the layer and returns an array of gradients
+        /// this array is passed on to the previous layer
         fn backward(self: *Self, out_grad: [out]f32) [in]f32 {
-            var vec_in_grad: @Vector(in, f32) = @splat(0);
-            for (0..out) |i| {
-                const pre_activ_grad = switch (activ) {
-                    .None => out_grad[i],
-                    .Tanh => out_grad[i] * (1 - math.pow(f32, self.outs[i], 2)),
-                    .ReLU => out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0,
-                };
-                const vec_pre_activ_grad: @Vector(in, f32) = @splat(pre_activ_grad);
-
-                self.weights_grad[i] = self.weights_grad[i] + self.input * vec_pre_activ_grad;
-                self.biases_grad[i] += pre_activ_grad;
-
-                vec_in_grad += self.weights[i] * vec_pre_activ_grad;
+            var in_grad: [in]f32 = @splat(0);
+            switch (activ) {
+                .None => {
+                    for (0..out) |i| {
+                        const grad = out_grad[i];
+                        for (0..in) |j| {
+                            self.weights_grad[i][j] += self.input[j] * grad;
+                            in_grad[j] += self.weights[i][j] * grad;
+                        }
+                        self.biases_grad[i] += grad;
+                    }
+                },
+                .Tanh => {
+                    for (0..out) |i| {
+                        const grad = out_grad[i] * (1 - math.pow(f32, self.outs[i], 2));
+                        for (0..in) |j| {
+                            self.weights_grad[i][j] += self.input[j] * grad;
+                            in_grad[j] += self.weights[i][j] * grad;
+                        }
+                        self.biases_grad[i] += grad;
+                    }
+                },
+                .ReLU => {
+                    for (0..out) |i| {
+                        const grad = out_grad[i] * if (self.outs[i] > 0) @as(f32, 1) else 0;
+                        for (0..in) |j| {
+                            self.weights_grad[i][j] += self.input[j] * grad;
+                            in_grad[j] += self.weights[i][j] * grad;
+                        }
+                        self.biases_grad[i] += grad;
+                    }
+                },
             }
 
-            return vec_in_grad;
+            return in_grad;
         }
 
         fn step(self: *Self) void {
             switch (optim) {
                 .SGD => {
-                    for (0..out) |i| self.weights[i] = self.weights[i] - @as(@Vector(in, f32), @splat(lr)) * self.weights_grad[i];
-                    self.biases = self.biases - @as(@Vector(out, f32), @splat(lr)) * self.biases_grad;
+                    for (0..out) |i| {
+                        for (0..in) |j| self.weights[i][j] -= lr * self.weights_grad[i][j];
+                        self.biases[i] -= lr * self.biases_grad[i];
+                    }
                 },
             }
         }

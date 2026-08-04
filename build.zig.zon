@@ -1,7 +1,7 @@
 .{
-    .name = .nanograd,
+    .name = .zircon,
     .version = "0.0.0",
-    .fingerprint = 0x63a328243d6b0d78,
+    .fingerprint = 0x4c91bc61d3c040b3,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
