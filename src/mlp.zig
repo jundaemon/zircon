@@ -157,8 +157,8 @@ fn Layer(
 /// public comptime struct that serves as a consolidation of all layers
 /// "in" is the size of input to the network
 /// "n" is the number of layers
-/// "outs" is the number of neurons in each layer
-/// "activ" is the activation function used for each layer
+/// "outs" is an array containing the number of neurons in each layer
+/// "activ" is an array containing the activation function used for each layer
 /// "optim" is the optimizer for the network
 /// "lr" is the learning rate for the network
 /// "seed" allows for replicable initialization of weights and biases
