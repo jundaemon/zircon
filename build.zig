@@ -3,8 +3,13 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const loss = b.createModule(.{
+    const loss = b.addModule("loss", .{
         .root_source_file = b.path("src/loss.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const optim = b.addModule("optim", .{
+        .root_source_file = b.path("src/optim.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -14,6 +19,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "loss", .module = loss },
+            .{ .name = "optim", .module = optim },
         },
     });
 
