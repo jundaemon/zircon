@@ -19,7 +19,7 @@ fn customRandFloat(rand: Random, bound: f32) f32 {
 /// Layer holds all information needed for forward and backward passes
 /// "in" is the size of input to the layer
 /// "out" is the number of neurons within the layer
-/// "activation" is the activation function of outputs of the layer
+/// "activation" is the activation function for outputs of the layer
 fn Layer(
     comptime in: usize,
     comptime out: usize,
@@ -131,8 +131,8 @@ fn Layer(
         }
 
         fn step(self: *Self, comptime T: type, optimizer: T) void {
-            switch (optimizer.optimizer_type) {
-                .SGD => {
+            switch (T) {
+                Optimizer(.SGD) => {
                     if (optimizer.momentum) |momentum| {
                         _ = momentum;
                     } else {
@@ -142,8 +142,9 @@ fn Layer(
                         }
                     }
                 },
-                .RMSprop => {},
-                .Adam => {},
+                Optimizer(.RMSprop) => {},
+                Optimizer(.Adam) => {},
+                else => unreachable,
             }
         }
 
@@ -284,7 +285,10 @@ pub fn MLP(
         }
 
         pub fn step(self: *Self, comptime T: type, optimizer: T) void {
-            if (T != Optimizer(.SGD)) @compileError("type should be any optimizer");
+            if (T != Optimizer(.SGD) and
+                T != Optimizer(.RMSprop) and
+                T != Optimizer(.Adam)) @compileError("type should be any optimizer");
+
             inline for (0..n) |i| self.layers[i].step(T, optimizer);
         }
 

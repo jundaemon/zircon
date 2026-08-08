@@ -5,7 +5,6 @@ pub const OptimizerType = enum { SGD, RMSprop, Adam };
 pub fn Optimizer(comptime optimizer_type: OptimizerType) type {
     switch (optimizer_type) {
         .SGD => return struct {
-            optimizer_type: OptimizerType = optimizer_type,
             lr: f32,
             momentum: ?f32,
 
@@ -19,7 +18,7 @@ pub fn Optimizer(comptime optimizer_type: OptimizerType) type {
                 return .{ .lr = lr, .momentum = momentum };
             }
         },
-        .RMSprop => {},
-        .Adam => {},
+        .RMSprop => return struct { lr: f32 },
+        .Adam => return struct { lr: f32 },
     }
 }
