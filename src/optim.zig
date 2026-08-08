@@ -1,5 +1,4 @@
 pub const OptimizerType = enum { SGD, RMSprop, Adam };
-pub const OptimizerError = error{ InvalidLRError, InvalidMomentumError };
 
 /// Optimizer allows for the selection of different optimizers, providing unique configurations for each
 /// "optim_type" is the optimizer selected
@@ -13,9 +12,9 @@ pub fn Optimizer(comptime optimizer_type: OptimizerType) type {
             const Self = @This();
             /// momentum is optional, if not given, optimizer performs stochastic gradient descent,
             /// if given, optimizer performs stochastic gradient descent with momentum
-            pub fn init(lr: f32, momentum: ?f32) OptimizerError!Self {
-                if (lr < 0) return OptimizerError.InvalidLRError;
-                if (momentum) |val| if (val < 0) return OptimizerError.InvalidMomentumError;
+            pub fn init(comptime lr: f32, comptime momentum: ?f32) Self {
+                if (lr < 0) @compileError("learning rate should be 0 or larger");
+                if (momentum) |val| if (val < 0) @compileError("momentum should be 0 or larger");
 
                 return .{ .lr = lr, .momentum = momentum };
             }

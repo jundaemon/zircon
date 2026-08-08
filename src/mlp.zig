@@ -284,6 +284,7 @@ pub fn MLP(
         }
 
         pub fn step(self: *Self, comptime T: type, optimizer: T) void {
+            if (T != Optimizer(.SGD)) @compileError("type should be any optimizer");
             inline for (0..n) |i| self.layers[i].step(T, optimizer);
         }
 
@@ -302,7 +303,7 @@ test "mlp" {
     try model.save(io, "tests/cases/mlp_init_weights.bin");
 
     const loss_fn = loss.MSE;
-    const optimizer = try Optimizer(.SGD).init(0.0001, null);
+    const optimizer = Optimizer(.SGD).init(0.0001, null);
 
     const pred = model.forward(.{ 1, 2 });
     const loss_, const loss_grad = loss_fn(1, pred, .{0.1});
