@@ -1,8 +1,9 @@
+const conf = @import("conf");
+const MLPConfig = conf.MLPConfig;
+
 pub const OptimizerType = enum { SGD, RMSprop, Adam };
 
-/// Optimizer allows for the selection of different optimizers, providing unique configurations for each
-/// "optim_type" is the optimizer selected
-pub fn Optimizer(comptime optimizer_type: OptimizerType) type {
+pub fn Optimizer1(comptime optimizer_type: OptimizerType) type {
     switch (optimizer_type) {
         .SGD => return struct {
             lr: f32,
