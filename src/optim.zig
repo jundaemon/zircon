@@ -118,8 +118,14 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                         const out = dimensions[i + 1];
 
                         for (0..out) |j| {
-                            for (0..in) |k| model_ptr.layers[i].weights[j][k] -= lr * model_ptr.layers[i].weight_grads[j][k];
-                            model_ptr.layers[i].biases[j] -= lr * model_ptr.layers[i].bias_grads[j];
+                            for (0..in) |k| {
+                                const weight_grad = model_ptr.layers[i].weight_grads[j][k];
+
+                                model_ptr.layers[i].weights[j][k] -= lr * weight_grad;
+                            }
+                            const bias_grad = model_ptr.layers[i].bias_grads[j];
+
+                            model_ptr.layers[i].biases[j] -= lr * bias_grad;
                         }
                     }
                 }
