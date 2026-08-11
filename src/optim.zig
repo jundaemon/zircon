@@ -31,31 +31,39 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
             model_ptr: *MLP(mlp_config),
             lr: f32,
             momentum: ?f32,
-            weight_velocities: Blocks,
-            bias_velocities: Flats,
+            weight_velocities: ?Blocks,
+            bias_velocities: ?Flats,
 
             const Self = @This();
             pub fn init(model_ptr: *MLP(mlp_config), lr: f32, momentum: ?f32) OptimizerError!Self {
-                if (lr < 0) return OptimizerError.InvalidLearningRate;
-                if (momentum) |val| if (val < 0) return OptimizerError.InvalidMomentum;
+                if (lr <= 0) return OptimizerError.InvalidLearningRate;
+                if (momentum) |val| {
+                    if (val <= 0) return OptimizerError.InvalidMomentum;
 
-                var weight_velocities: Blocks = undefined;
-                var bias_velocities: Flats = undefined;
-                inline for (0..num_layers) |i| {
-                    const out = dimensions[i + 1];
+                    var weight_velocities: Blocks = undefined;
+                    var bias_velocities: Flats = undefined;
+                    inline for (0..num_layers) |i| {
+                        const out = dimensions[i + 1];
 
-                    for (0..out) |j| {
-                        weight_velocities[i][j] = @splat(0);
-                        bias_velocities[i][j] = 0;
+                        for (0..out) |j| {
+                            weight_velocities[i][j] = @splat(0);
+                            bias_velocities[i][j] = 0;
+                        }
                     }
-                }
 
-                return .{
+                    return .{
+                        .model_ptr = model_ptr,
+                        .lr = lr,
+                        .momentum = momentum,
+                        .weight_velocities = weight_velocities,
+                        .bias_velocities = bias_velocities,
+                    };
+                } else return .{
                     .model_ptr = model_ptr,
                     .lr = lr,
-                    .momentum = momentum,
-                    .weight_velocities = weight_velocities,
-                    .bias_velocities = bias_velocities,
+                    .momentum = null,
+                    .weight_velocities = null,
+                    .bias_velocities = null,
                 };
             }
 
@@ -80,23 +88,23 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
 
                         for (0..out) |j| {
                             for (0..in) |k| {
-                                const prev_weight_velocity = self.weight_velocities[i][j][k];
+                                const prev_weight_velocity = self.weight_velocities.?[i][j][k];
                                 const weight_grad = model_ptr.layers[i].weight_grads[j][k];
 
-                                self.weight_velocities[i][j][k] = momentum * prev_weight_velocity + lr * weight_grad;
+                                self.weight_velocities.?[i][j][k] = momentum * prev_weight_velocity + lr * weight_grad;
 
-                                const new_weight_velocity = self.weight_velocities[i][j][k];
+                                const new_weight_velocity = self.weight_velocities.?[i][j][k];
                                 const prev_weight = model_ptr.layers[i].weights[j][k];
 
                                 model_ptr.layers[i].weights[j][k] = prev_weight - new_weight_velocity;
                             }
 
-                            const prev_bias_velocity = self.bias_velocities[i][j];
+                            const prev_bias_velocity = self.bias_velocities.?[i][j];
                             const bias_grad = model_ptr.layers[i].bias_grads[j];
 
-                            self.bias_velocities[i][j] = momentum * prev_bias_velocity + lr * bias_grad;
+                            self.bias_velocities.?[i][j] = momentum * prev_bias_velocity + lr * bias_grad;
 
-                            const new_bias_velocity = self.bias_velocities[i][j];
+                            const new_bias_velocity = self.bias_velocities.?[i][j];
                             const prev_bias = model_ptr.layers[i].biases[j];
 
                             model_ptr.layers[i].biases[j] = prev_bias - new_bias_velocity;
