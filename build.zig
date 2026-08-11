@@ -3,8 +3,8 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const functions = b.addModule("functions", .{
-        .root_source_file = b.path("src/functions.zig"),
+    const function = b.addModule("function", .{
+        .root_source_file = b.path("src/function.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -13,15 +13,15 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "functions", .module = functions },
+            .{ .name = "function", .module = function },
         },
     });
-    const conf = b.addModule("conf", .{
-        .root_source_file = b.path("src/conf.zig"),
+    const mlp = b.addModule("mlp", .{
+        .root_source_file = b.path("src/mlp.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "functions", .module = functions },
+            .{ .name = "function", .module = function },
             .{ .name = "layer", .module = layer },
         },
     });
@@ -30,21 +30,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "layer", .module = layer },
-            .{ .name = "conf", .module = conf },
+            .{ .name = "mlp", .module = mlp },
         },
     });
-    const mlp = b.addModule("mlp", .{
-        .root_source_file = b.path("src/mlp.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "functions", .module = functions },
-            .{ .name = "layer", .module = layer },
-            .{ .name = "conf", .module = conf },
-            .{ .name = "optim", .module = optim },
-        },
-    });
+    mlp.addImport("optim", optim);
 
     const mlp_tests = b.addTest(.{ .root_module = mlp });
     const run_mlp_tests = b.addRunArtifact(mlp_tests);
