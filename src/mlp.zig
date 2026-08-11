@@ -1,7 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
 const Io = std.Io;
-const math = std.math;
 const mem = std.mem;
 const Random = std.Random;
 const testing = std.testing;

@@ -3,8 +3,8 @@ const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;
 
 pub const OptimizerAlgo = enum { SGD, RMSprop, Adam };
-pub const OptimizerError = error{ InvalidLearningRate, InvalidMomentum };
 pub const OptimizerConfig = struct { mlp_config: MLPConfig, optimizer: OptimizerAlgo };
+pub const OptimizerError = error{ InvalidLearningRate, InvalidMomentum };
 
 pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
     const mlp_config = optim_config.mlp_config;
