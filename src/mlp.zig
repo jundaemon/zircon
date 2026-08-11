@@ -21,10 +21,14 @@ pub const MLPConfig = struct {
     seed: u64,
 
     pub fn check(comptime self: MLPConfig) void {
-        if (self.in == 0) @compileError("in should be 1 or more");
-        if (self.outs.len == 0 or self.activations.len == 0) @compileError("number of layers should be 1 or more");
-        if (self.outs.len != self.activations.len) @compileError("outs and activations should have the same length");
-        for (self.outs) |out| if (out == 0) @compileError("number of neurons in each layer should be 1 or more");
+        const in = self.in;
+        const outs = self.outs;
+        const activations = self.activations;
+
+        if (in == 0) @compileError("in should be 1 or more");
+        if (outs.len == 0 or activations.len == 0) @compileError("number of layers should be 1 or more");
+        if (outs.len != activations.len) @compileError("outs and activations should have the same length");
+        for (outs) |out| if (out == 0) @compileError("number of neurons in each layer should be 1 or more");
     }
 };
 
