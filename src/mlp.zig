@@ -34,21 +34,21 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
     const dimensions = [1]usize{mlp_config.in} ++ mlp_config.outs;
 
     var layer_types: [num_layers]type = undefined;
-    var in_types: [num_layers]type = undefined;
-    var out_types: [num_layers]type = undefined;
+    var block_types: [num_layers]type = undefined;
+    var flat_types: [num_layers]type = undefined;
     for (0..num_layers) |i| {
         const in = dimensions[i];
         const out = dimensions[i + 1];
         const activation = mlp_config.activations[i];
 
         layer_types[i] = Layer(in, out, activation);
-        in_types[i] = [in]f32;
-        out_types[i] = [out]f32;
+        block_types[i] = [in]f32;
+        flat_types[i] = [out]f32;
     }
 
     const Layers = @Tuple(&layer_types);
-    const Ins = @Tuple(&in_types);
-    const Outs = @Tuple(&out_types);
+    const Blocks = @Tuple(&block_types);
+    const Flats = @Tuple(&flat_types);
 
     return struct {
         layers: Layers,
@@ -122,7 +122,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
         }
 
         pub fn forward(self: *Self, input: [mlp_config.in]f32) [dimensions[num_layers]]f32 {
-            var incremental_outs: Outs = undefined;
+            var incremental_outs: Flats = undefined;
             inline for (0..num_layers) |i| {
                 if (i == 0) {
                     incremental_outs[i] = self.layers[i].forward(input);
@@ -135,7 +135,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
         }
 
         pub fn backward(self: *Self, loss_grad: [dimensions[num_layers]]f32) void {
-            var incremental_in_grads: Ins = undefined;
+            var incremental_in_grads: Blocks = undefined;
             inline for (0..num_layers) |i| {
                 const reverse_i = num_layers - i - 1;
                 if (reverse_i == num_layers - 1) {
@@ -164,7 +164,7 @@ test "mlp 1" {
 
     const loss_fn = function.MSE;
     const loss_grad_fn = function.MSE_grad;
-    const optimizer: Optimizer(.{
+    var optimizer: Optimizer(.{
         .mlp_config = mlp_config,
         .optimizer = .SGD,
     }) = try .init(&model, 0.0001, null);
@@ -191,4 +191,49 @@ test "mlp 1" {
     model.backward(loss_grad_prime);
     optimizer.step();
     try model.save(io, "tests/cases/mlp_1_final_weights");
+}
+
+test "mlp 2" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_2_losses", .{});
+    defer file.close(io);
+
+    const mlp_config = MLPConfig{
+        .in = 1,
+        .outs = &.{ 2, 4, 6, 5, 3 },
+        .activations = &.{ .ReLU, .ReLU, .ReLU, .ReLU, .None },
+        .seed = 1,
+    };
+    var model: MLP(mlp_config) = .init();
+    try model.save(io, "tests/cases/mlp_2_initial_weights");
+
+    const loss_fn = function.MSE;
+    const loss_grad_fn = function.MSE_grad;
+    var optimizer: Optimizer(.{
+        .mlp_config = mlp_config,
+        .optimizer = .SGD,
+    }) = try .init(&model, 0.0001, 0.9);
+
+    const pred = model.forward(.{2});
+    const loss = loss_fn(3, pred, .{ 0.5, 0.2, 0.3 });
+    const loss_grad = loss_grad_fn(3, pred, .{ 0.5, 0.2, 0.3 });
+    var buf: [30]u8 = undefined;
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
+    try file.writeStreamingAll(io, loss_str);
+
+    model.backward(loss_grad);
+    optimizer.step();
+    optimizer.zero_grad();
+    try model.save(io, "tests/cases/mlp_2_updated_weights");
+
+    const pred_prime = model.forward(.{3});
+    const loss_prime = loss_fn(3, pred_prime, .{ 0.7, 0.1, 0.2 });
+    const loss_grad_prime = loss_grad_fn(3, pred_prime, .{ 0.7, 0.1, 0.2 });
+    var buf_prime: [30]u8 = undefined;
+    const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
+    try file.writeStreamingAll(io, loss_prime_str);
+
+    model.backward(loss_grad_prime);
+    optimizer.step();
+    try model.save(io, "tests/cases/mlp_2_final_weights");
 }

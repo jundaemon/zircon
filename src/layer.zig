@@ -12,9 +12,9 @@ fn custom_rand_f32(rand: Random, bound: f32) f32 {
 pub fn Layer(comptime in: usize, comptime out: usize, comptime activation: Activation) type {
     return struct {
         weights: [out][in]f32,
-        weights_grad: [out][in]f32 = [_][in]f32{@splat(0)} ** out,
+        weight_grads: [out][in]f32 = [_][in]f32{@splat(0)} ** out,
         biases: [out]f32,
-        biases_grad: [out]f32 = @splat(0),
+        bias_grads: [out]f32 = @splat(0),
         outs: [out]f32 = @splat(0),
         input: [in]f32 = @splat(0),
 
@@ -31,6 +31,7 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime activation: Activ
             for (0..out) |i| {
                 var neuron_weights: [in]f32 = undefined;
                 for (0..in) |j| neuron_weights[j] = custom_rand_f32(rand, weight_bound);
+
                 const neuron_bias = custom_rand_f32(rand, bias_bound);
 
                 layer_weights[i] = neuron_weights;
@@ -73,10 +74,10 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime activation: Activ
 
         fn accumulate_grads(self: *Self, i: usize, out_grad: f32, in_grads: []f32) void {
             for (0..in) |j| {
-                self.weights_grad[i][j] += self.input[j] * out_grad;
+                self.weight_grads[i][j] += self.input[j] * out_grad;
                 in_grads[j] += self.weights[i][j] * out_grad;
             }
-            self.biases_grad[i] += out_grad;
+            self.bias_grads[i] += out_grad;
         }
 
         pub fn backward(self: *Self, out_grads: [out]f32) [in]f32 {
