@@ -1,5 +1,3 @@
-const std = @import("std");
-
 const mlp = @import("mlp");
 const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;

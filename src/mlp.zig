@@ -34,21 +34,21 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
     const dimensions = [1]usize{mlp_config.in} ++ mlp_config.outs;
 
     var layer_types: [num_layers]type = undefined;
-    var block_types: [num_layers]type = undefined;
-    var flat_types: [num_layers]type = undefined;
+    var in_types: [num_layers]type = undefined;
+    var out_types: [num_layers]type = undefined;
     for (0..num_layers) |i| {
         const in = dimensions[i];
         const out = dimensions[i + 1];
         const activation = mlp_config.activations[i];
 
         layer_types[i] = Layer(in, out, activation);
-        block_types[i] = [in]f32;
-        flat_types[i] = [out]f32;
+        in_types[i] = [in]f32;
+        out_types[i] = [out]f32;
     }
 
     const Layers = @Tuple(&layer_types);
-    const Blocks = @Tuple(&block_types);
-    const Flats = @Tuple(&flat_types);
+    const Ins = @Tuple(&in_types);
+    const Outs = @Tuple(&out_types);
 
     return struct {
         layers: Layers,
@@ -122,7 +122,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
         }
 
         pub fn forward(self: *Self, input: [mlp_config.in]f32) [dimensions[num_layers]]f32 {
-            var incremental_outs: Flats = undefined;
+            var incremental_outs: Outs = undefined;
             inline for (0..num_layers) |i| {
                 if (i == 0) {
                     incremental_outs[i] = self.layers[i].forward(input);
@@ -135,7 +135,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
         }
 
         pub fn backward(self: *Self, loss_grad: [dimensions[num_layers]]f32) void {
-            var incremental_in_grads: Blocks = undefined;
+            var incremental_in_grads: Ins = undefined;
             inline for (0..num_layers) |i| {
                 const reverse_i = num_layers - i - 1;
                 if (reverse_i == num_layers - 1) {
