@@ -120,11 +120,9 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                         for (0..out) |j| {
                             for (0..in) |k| {
                                 const weight_grad = model_ptr.layers[i].weight_grads[j][k];
-
                                 model_ptr.layers[i].weights[j][k] -= lr * weight_grad;
                             }
                             const bias_grad = model_ptr.layers[i].bias_grads[j];
-
                             model_ptr.layers[i].biases[j] -= lr * bias_grad;
                         }
                     }

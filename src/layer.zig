@@ -32,10 +32,8 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime activation: Activ
                 var neuron_weights: [in]f32 = undefined;
                 for (0..in) |j| neuron_weights[j] = custom_rand_f32(rand, weight_bound);
 
-                const neuron_bias = custom_rand_f32(rand, bias_bound);
-
                 layer_weights[i] = neuron_weights;
-                layer_biases[i] = neuron_bias;
+                layer_biases[i] = custom_rand_f32(rand, bias_bound);
             }
 
             return .{ .weights = layer_weights, .biases = layer_biases };
