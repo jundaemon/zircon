@@ -205,11 +205,13 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                             const prev_w_moving_mean = self.W_moving_mean[i][j][k];
                             const dL_dw = model_ptr.layers[i].dL_dW[j][k];
 
+                            // s_t = decay_rate * s_t-1 + (1 - decay_rate) * (dL_dw)^2
                             self.W_moving_mean[i][j][k] = decay_rate * prev_w_moving_mean + (1 - decay_rate) * math.pow(f32, dL_dw, 2);
 
                             const curr_w_moving_mean = self.W_moving_mean[i][j][k];
                             const prev_w = model_ptr.layers[i].W[j][k];
 
+                            // w_t = w_t-1 - lr * dL_dw / (sqrt(s_t) + epsilon)
                             model_ptr.layers[i].W[j][k] = prev_w - lr * dL_dw / (math.sqrt(curr_w_moving_mean) + epsilon);
                         }
 

@@ -45,12 +45,13 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
             return .{ .W = W, .B = B };
         }
 
-        /// performs z = WX + b, y = f(z) depending on the activation function of neurons in the layer
+        /// performs a forward pass with result depending on the activation function of neurons in the layer
         /// the output of the layer is returned and to be passed to the next layer
         pub fn forward(self: *Self, X: [in]f32) [out]f32 {
             self.X = X;
             self.Y = @splat(0);
 
+            // z = wx + b, y = f(z)
             for (0..out) |i| {
                 for (0..in) |j| self.Y[i] += X[j] * self.W[i][j];
                 self.Y[i] += self.B[i];
