@@ -9,96 +9,104 @@ fn custom_rand_f32(rand: Random, bound: f32) f32 {
     return rand.float(f32) * bound * 2 - bound;
 }
 
-pub fn Layer(comptime in: usize, comptime out: usize, comptime activation: Activation) type {
+pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) type {
     return struct {
-        weights: [out][in]f32,
-        weight_grads: [out][in]f32 = [_][in]f32{@splat(0)} ** out,
-        biases: [out]f32,
-        bias_grads: [out]f32 = @splat(0),
-        outs: [out]f32 = @splat(0),
-        input: [in]f32 = @splat(0),
+        W: [out][in]f32,
+        dL_dW: [out][in]f32 = [_][in]f32{@splat(0)} ** out,
+        B: [out]f32,
+        dL_dB: [out]f32 = @splat(0),
+        Y: [out]f32 = @splat(0),
+        X: [in]f32 = @splat(0),
 
         const Self = @This();
         pub fn init(rand: Random) Self {
-            const weight_bound = switch (activation) {
+            // if the activation function for a layer is symmetrical, Xavier uniform distribution is used to initialize weights
+            // if the activation function for a layer is asymmetrical, Kaiming uniform distribution in fan in mode is used to initialize weights
+            const w_bound = switch (f) {
                 .None, .Tanh => math.sqrt(6 / @as(f32, in + out)),
                 .ReLU => math.sqrt(6 / @as(f32, in)),
             };
-            const bias_bound = 1 / math.sqrt(@as(f32, in));
+            const b_bound = 1 / math.sqrt(@as(f32, in));
 
-            var layer_weights: [out][in]f32 = undefined;
-            var layer_biases: [out]f32 = undefined;
+            var layer_W: [out][in]f32 = undefined;
+            var layer_B: [out]f32 = undefined;
             for (0..out) |i| {
-                var neuron_weights: [in]f32 = undefined;
-                for (0..in) |j| neuron_weights[j] = custom_rand_f32(rand, weight_bound);
+                var neuron_W: [in]f32 = undefined;
+                for (0..in) |j| neuron_W[j] = custom_rand_f32(rand, w_bound);
 
-                layer_weights[i] = neuron_weights;
-                layer_biases[i] = custom_rand_f32(rand, bias_bound);
+                layer_W[i] = neuron_W;
+                layer_B[i] = custom_rand_f32(rand, b_bound);
             }
 
-            return .{ .weights = layer_weights, .biases = layer_biases };
+            return .{ .W = layer_W, .B = layer_B };
         }
 
-        pub fn load(weights: [out][in]f32, biases: [out]f32) Self {
-            return .{ .weights = weights, .biases = biases };
+        pub fn load(W: [out][in]f32, B: [out]f32) Self {
+            return .{ .W = W, .B = B };
         }
 
-        pub fn forward(self: *Self, input: [in]f32) [out]f32 {
-            self.input = input;
-            self.outs = @splat(0);
+        /// performs z = WX + b, y = f(z) depending on the activation function of neurons in the layer
+        /// the output of the layer is returned and to be passed to the next layer
+        pub fn forward(self: *Self, X: [in]f32) [out]f32 {
+            self.X = X;
+            self.Y = @splat(0);
 
             for (0..out) |i| {
-                for (0..in) |j| self.outs[i] += input[j] * self.weights[i][j];
-                self.outs[i] += self.biases[i];
+                for (0..in) |j| self.Y[i] += X[j] * self.W[i][j];
+                self.Y[i] += self.B[i];
             }
-            switch (activation) {
+            switch (f) {
                 .None => {},
                 .Tanh => {
                     for (0..out) |i| {
-                        const pre_activation = self.outs[i];
-                        self.outs[i] = math.tanh(pre_activation);
+                        const z = self.Y[i];
+                        self.Y[i] = math.tanh(z);
                     }
                 },
                 .ReLU => {
                     for (0..out) |i| {
-                        const pre_activation = self.outs[i];
-                        self.outs[i] = if (pre_activation > 0) pre_activation else 0;
+                        const z = self.Y[i];
+                        self.Y[i] = if (z > 0) z else 0;
                     }
                 },
             }
 
-            return self.outs;
+            return self.Y;
         }
 
-        fn accumulate_grads(self: *Self, i: usize, out_grad: f32, in_grads: []f32) void {
+        fn backward_helper(self: *Self, i: usize, dL_dz: f32, dL_dX: []f32) void {
             for (0..in) |j| {
-                self.weight_grads[i][j] += self.input[j] * out_grad;
-                in_grads[j] += self.weights[i][j] * out_grad;
+                self.dL_dW[i][j] += self.X[j] * dL_dz;
+                dL_dX[j] += self.W[i][j] * dL_dz;
             }
-            self.bias_grads[i] += out_grad;
+            self.dL_dB[i] += dL_dz;
         }
 
-        pub fn backward(self: *Self, out_grads: [out]f32) [in]f32 {
-            var in_grads: [in]f32 = @splat(0);
-            switch (activation) {
+        /// calculates derivative of loss wrt to weights and biases using chain rule
+        /// the derivative of loss wrt to the input to this layer is returned and to be passed to the previous layer
+        pub fn backward(self: *Self, dL_dY: [out]f32) [in]f32 {
+            var dL_dX: [in]f32 = @splat(0);
+            switch (f) {
                 .None => {
-                    for (0..out) |i| self.accumulate_grads(i, out_grads[i], &in_grads);
+                    for (0..out) |i| self.backward_helper(i, dL_dY[i], &dL_dX);
                 },
                 .Tanh => {
                     for (0..out) |i| {
-                        const out_grad = out_grads[i] * (1 - math.pow(f32, self.outs[i], 2));
-                        self.accumulate_grads(i, out_grad, &in_grads);
+                        // derivative of y wrt to z in this case is the derivative of tanh = 1 - tanh^2(z)
+                        const dL_dz = dL_dY[i] * (1 - math.pow(f32, self.Y[i], 2));
+                        self.backward_helper(i, dL_dz, &dL_dX);
                     }
                 },
                 .ReLU => {
                     for (0..out) |i| {
-                        const out_grad = out_grads[i] * if (self.outs[i] > 0) @as(f32, 1) else 0;
-                        self.accumulate_grads(i, out_grad, &in_grads);
+                        // derivative of y wrt to z in this case is the derivative of relu = {1: z > 0} | {0: z <= 0}
+                        const dL_dz = dL_dY[i] * if (self.Y[i] > 0) @as(f32, 1) else 0;
+                        self.backward_helper(i, dL_dz, &dL_dX);
                     }
                 },
             }
 
-            return in_grads;
+            return dL_dX;
         }
     };
 }

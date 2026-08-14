@@ -17,17 +17,17 @@ const Optimizer = optim.Optimizer;
 pub const MLPConfig = struct {
     in: usize,
     outs: []const usize,
-    activations: []const Activation,
+    f: []const Activation,
     seed: u64,
 
     pub fn check(comptime self: MLPConfig) void {
         const in = self.in;
         const outs = self.outs;
-        const activations = self.activations;
+        const f = self.f;
 
         if (in == 0) @compileError("in should be 1 or more");
-        if (outs.len == 0 or activations.len == 0) @compileError("number of layers should be 1 or more");
-        if (outs.len != activations.len) @compileError("outs and activations should have the same length");
+        if (outs.len == 0 or f.len == 0) @compileError("number of layers should be 1 or more");
+        if (outs.len != f.len) @compileError("outs and f should have the same length");
         for (outs) |out| if (out == 0) @compileError("number of neurons in each layer should be 1 or more");
     }
 };
@@ -38,21 +38,21 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
     const dimensions = [1]usize{mlp_config.in} ++ mlp_config.outs;
 
     var layer_types: [num_layers]type = undefined;
-    var in_types: [num_layers]type = undefined;
-    var out_types: [num_layers]type = undefined;
+    var Y_types: [num_layers]type = undefined;
+    var dL_dX_types: [num_layers]type = undefined;
     for (0..num_layers) |i| {
         const in = dimensions[i];
         const out = dimensions[i + 1];
-        const activation = mlp_config.activations[i];
+        const f = mlp_config.f[i];
 
-        layer_types[i] = Layer(in, out, activation);
-        in_types[i] = [in]f32;
-        out_types[i] = [out]f32;
+        layer_types[i] = Layer(in, out, f);
+        Y_types[i] = [out]f32;
+        dL_dX_types[i] = [in]f32;
     }
 
     const Layers = @Tuple(&layer_types);
-    const Ins = @Tuple(&in_types);
-    const Outs = @Tuple(&out_types);
+    const Ys = @Tuple(&Y_types);
+    const dL_dXs = @Tuple(&dL_dX_types);
 
     return struct {
         layers: Layers,
@@ -81,15 +81,15 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
                 const in = dimensions[i];
                 const out = dimensions[i + 1];
 
-                var layer_weights_bytes: [out * in * 4]u8 = undefined;
-                try interface.readSliceAll(&layer_weights_bytes);
+                var layer_W_bytes: [out * in * 4]u8 = undefined;
+                try interface.readSliceAll(&layer_W_bytes);
 
-                var layer_biases_bytes: [out * 4]u8 = undefined;
-                try interface.readSliceAll(&layer_biases_bytes);
+                var layer_B_bytes: [out * 4]u8 = undefined;
+                try interface.readSliceAll(&layer_B_bytes);
 
                 layers[i] = .load(
-                    mem.bytesToValue([out][in]f32, &layer_weights_bytes),
-                    mem.bytesToValue([out]f32, &layer_biases_bytes),
+                    mem.bytesToValue([out][in]f32, &layer_W_bytes),
+                    mem.bytesToValue([out]f32, &layer_B_bytes),
                 );
             }
 
@@ -108,44 +108,44 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
                 const in = dimensions[i];
                 const out = dimensions[i + 1];
 
-                var layer_weights: [out][in]f32 = undefined;
-                var layer_biases: [out]f32 = undefined;
+                var layer_W: [out][in]f32 = undefined;
+                var layer_B: [out]f32 = undefined;
                 for (0..out) |j| {
-                    const neuron_weights = self.layers[i].weights[j];
-                    const neuron_bias = self.layers[i].biases[j];
+                    const neuron_W = self.layers[i].W[j];
+                    const neuron_b = self.layers[i].B[j];
 
-                    layer_weights[j] = neuron_weights;
-                    layer_biases[j] = neuron_bias;
+                    layer_W[j] = neuron_W;
+                    layer_B[j] = neuron_b;
                 }
 
-                try interface.writeAll(mem.asBytes(&layer_weights));
-                try interface.writeAll(mem.asBytes(&layer_biases));
+                try interface.writeAll(mem.asBytes(&layer_W));
+                try interface.writeAll(mem.asBytes(&layer_B));
             }
 
             try interface.flush();
         }
 
-        pub fn forward(self: *Self, input: [mlp_config.in]f32) [dimensions[num_layers]]f32 {
-            var incremental_outs: Outs = undefined;
+        pub fn forward(self: *Self, X: [mlp_config.in]f32) [dimensions[num_layers]]f32 {
+            var incremental_Y: Ys = undefined;
             inline for (0..num_layers) |i| {
                 if (i == 0) {
-                    incremental_outs[i] = self.layers[i].forward(input);
+                    incremental_Y[i] = self.layers[i].forward(X);
                 } else {
-                    incremental_outs[i] = self.layers[i].forward(incremental_outs[i - 1]);
+                    incremental_Y[i] = self.layers[i].forward(incremental_Y[i - 1]);
                 }
             }
 
-            return incremental_outs[num_layers - 1];
+            return incremental_Y[num_layers - 1];
         }
 
-        pub fn backward(self: *Self, loss_grad: [dimensions[num_layers]]f32) void {
-            var incremental_in_grads: Ins = undefined;
+        pub fn backward(self: *Self, dL_dy_cap: [dimensions[num_layers]]f32) void {
+            var incremental_dL_dX: dL_dXs = undefined;
             inline for (0..num_layers) |i| {
                 const reverse_i = num_layers - i - 1;
                 if (reverse_i == num_layers - 1) {
-                    incremental_in_grads[reverse_i] = self.layers[reverse_i].backward(loss_grad);
+                    incremental_dL_dX[reverse_i] = self.layers[reverse_i].backward(dL_dy_cap);
                 } else {
-                    incremental_in_grads[reverse_i] = self.layers[reverse_i].backward(incremental_in_grads[reverse_i + 1]);
+                    incremental_dL_dX[reverse_i] = self.layers[reverse_i].backward(incremental_dL_dX[reverse_i + 1]);
                 }
             }
         }
@@ -160,7 +160,7 @@ test "mlp 1" {
     const mlp_config = MLPConfig{
         .in = 2,
         .outs = &.{ 3, 5, 7, 4, 1 },
-        .activations = &.{ .Tanh, .Tanh, .Tanh, .Tanh, .None },
+        .f = &.{ .Tanh, .Tanh, .Tanh, .Tanh, .None },
         .seed = 1,
     };
     var model: MLP(mlp_config) = .init();
@@ -205,7 +205,7 @@ test "mlp 2" {
     const mlp_config = MLPConfig{
         .in = 1,
         .outs = &.{ 2, 4, 6, 5, 3 },
-        .activations = &.{ .ReLU, .ReLU, .ReLU, .ReLU, .None },
+        .f = &.{ .ReLU, .ReLU, .ReLU, .ReLU, .None },
         .seed = 1,
     };
     var model: MLP(mlp_config) = .init();
@@ -240,4 +240,49 @@ test "mlp 2" {
     model.backward(loss_grad_prime);
     optimizer.step();
     try model.save(io, "tests/cases/mlp_2_final_weights");
+}
+
+test "mlp 3" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_3_losses", .{});
+    defer file.close(io);
+
+    const mlp_config = MLPConfig{
+        .in = 3,
+        .outs = &.{ 9, 7, 5, 3, 1 },
+        .f = &.{ .ReLU, .Tanh, .ReLU, .Tanh, .None },
+        .seed = 1,
+    };
+    var model: MLP(mlp_config) = .init();
+    try model.save(io, "tests/cases/mlp_3_initial_weights");
+
+    const loss_fn = function.MSE;
+    const loss_grad_fn = function.MSE_grad;
+    var optimizer: Optimizer(.{
+        .mlp_config = mlp_config,
+        .optimizer = .RMSprop,
+    }) = try .init(&model, 0.0001, 0.9, null);
+
+    const pred = model.forward(.{ 1, 2, 3 });
+    const loss = loss_fn(1, pred, .{0.4});
+    const loss_grad = loss_grad_fn(1, pred, .{0.4});
+    var buf: [30]u8 = undefined;
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
+    try file.writeStreamingAll(io, loss_str);
+
+    model.backward(loss_grad);
+    optimizer.step();
+    optimizer.zero_grad();
+    try model.save(io, "tests/cases/mlp_3_updated_weights");
+
+    const pred_prime = model.forward(.{ 5, 4, 3 });
+    const loss_prime = loss_fn(1, pred_prime, .{0.3});
+    const loss_grad_prime = loss_grad_fn(1, pred_prime, .{0.3});
+    var buf_prime: [30]u8 = undefined;
+    const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
+    try file.writeStreamingAll(io, loss_prime_str);
+
+    model.backward(loss_grad_prime);
+    optimizer.step();
+    try model.save(io, "tests/cases/mlp_3_final_weights");
 }
