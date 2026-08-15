@@ -152,7 +152,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
     };
 }
 
-test "mlp training loop 1" {
+test "mlp double passes 1" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_1_losses", .{});
     defer file.close(io);
@@ -197,7 +197,7 @@ test "mlp training loop 1" {
     try model.save(io, "tests/cases/mlp_1_final_weights");
 }
 
-test "mlp training loop 2" {
+test "mlp double passes 2" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_2_losses", .{});
     defer file.close(io);
@@ -242,7 +242,7 @@ test "mlp training loop 2" {
     try model.save(io, "tests/cases/mlp_2_final_weights");
 }
 
-test "mlp training loop 3" {
+test "mlp double passes 3" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_3_losses", .{});
     defer file.close(io);
@@ -261,7 +261,7 @@ test "mlp training loop 3" {
     var optimizer: Optimizer(.{
         .mlp_config = mlp_config,
         .optimizer = .RMSprop,
-    }) = try .init(&model, .{ .lr = 1e-4, .decay_rate = 0.9 });
+    }) = try .init(&model, .{ .lr = 1e-4, .alpha = 0.9 });
 
     const pred = model.forward(.{ 1, 2, 3 });
     const loss = loss_fn(1, pred, .{0.4});
@@ -285,4 +285,49 @@ test "mlp training loop 3" {
     model.backward(loss_grad_prime);
     optimizer.step();
     try model.save(io, "tests/cases/mlp_3_final_weights");
+}
+
+test "mlp double passes 4" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_4_losses", .{});
+    defer file.close(io);
+
+    const mlp_config = MLPConfig{
+        .in = 4,
+        .outs = &.{ 10, 8, 6, 4, 2 },
+        .f = &.{ .Tanh, .ReLU, .Tanh, .ReLU, .None },
+        .seed = 1,
+    };
+    var model: MLP(mlp_config) = .init();
+    try model.save(io, "tests/cases/mlp_4_initial_weights");
+
+    const loss_fn = function.MSE;
+    const loss_grad_fn = function.MSE_grad;
+    var optimizer: Optimizer(.{
+        .mlp_config = mlp_config,
+        .optimizer = .Adam,
+    }) = try .init(&model, .{ .lr = 1e-4, .beta = 0.99, .beta_2 = 0.99 });
+
+    const pred = model.forward(.{ 4, 3, 2, 1 });
+    const loss = loss_fn(2, pred, .{ 0.1, 0.2 });
+    const loss_grad = loss_grad_fn(2, pred, .{ 0.1, 0.2 });
+    var buf: [30]u8 = undefined;
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss});
+    try file.writeStreamingAll(io, loss_str);
+
+    model.backward(loss_grad);
+    optimizer.step();
+    optimizer.zero_grad();
+    try model.save(io, "tests/cases/mlp_4_updated_weights");
+
+    const pred_prime = model.forward(.{ 3, 4, 5, 6 });
+    const loss_prime = loss_fn(2, pred_prime, .{ 0.4, 0.3 });
+    const loss_grad_prime = loss_grad_fn(2, pred_prime, .{ 0.4, 0.3 });
+    var buf_prime: [30]u8 = undefined;
+    const loss_prime_str = try fmt.bufPrint(&buf_prime, "{d}\n", .{loss_prime});
+    try file.writeStreamingAll(io, loss_prime_str);
+
+    model.backward(loss_grad_prime);
+    optimizer.step();
+    try model.save(io, "tests/cases/mlp_4_final_weights");
 }
