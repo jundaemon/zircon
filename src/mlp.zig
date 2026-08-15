@@ -152,7 +152,7 @@ pub fn MLP(comptime mlp_config: MLPConfig) type {
     };
 }
 
-test "mlp 1" {
+test "mlp training loop 1" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_1_losses", .{});
     defer file.close(io);
@@ -171,7 +171,7 @@ test "mlp 1" {
     var optimizer: Optimizer(.{
         .mlp_config = mlp_config,
         .optimizer = .SGD,
-    }) = try .init(&model, 0.0001, null);
+    }) = try .init(&model, .{ .lr = 1e-4 });
 
     const pred = model.forward(.{ 1, 2 });
     const loss = loss_fn(1, pred, .{0.1});
@@ -197,7 +197,7 @@ test "mlp 1" {
     try model.save(io, "tests/cases/mlp_1_final_weights");
 }
 
-test "mlp 2" {
+test "mlp training loop 2" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_2_losses", .{});
     defer file.close(io);
@@ -216,7 +216,7 @@ test "mlp 2" {
     var optimizer: Optimizer(.{
         .mlp_config = mlp_config,
         .optimizer = .SGD,
-    }) = try .init(&model, 0.0001, 0.9);
+    }) = try .init(&model, .{ .lr = 1e-4, .momentum = 0.9 });
 
     const pred = model.forward(.{2});
     const loss = loss_fn(3, pred, .{ 0.5, 0.2, 0.3 });
@@ -242,7 +242,7 @@ test "mlp 2" {
     try model.save(io, "tests/cases/mlp_2_final_weights");
 }
 
-test "mlp 3" {
+test "mlp training loop 3" {
     const io = testing.io;
     var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_3_losses", .{});
     defer file.close(io);
@@ -261,7 +261,7 @@ test "mlp 3" {
     var optimizer: Optimizer(.{
         .mlp_config = mlp_config,
         .optimizer = .RMSprop,
-    }) = try .init(&model, 0.0001, 0.9, null);
+    }) = try .init(&model, .{ .lr = 1e-4, .decay_rate = 0.9 });
 
     const pred = model.forward(.{ 1, 2, 3 });
     const loss = loss_fn(1, pred, .{0.4});

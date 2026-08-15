@@ -3,6 +3,8 @@ from torch import nn
 
 from utils import get_losses, get_weights
 
+torch.optim.Adam
+
 
 def test_mlp_1() -> None:
     in_channels = 2
@@ -25,7 +27,7 @@ def test_mlp_1() -> None:
     model.load_state_dict(initial_weights)
 
     loss_func = nn.MSELoss()
-    optimizer = torch.optim.SGD(model.parameters(), 0.0001)
+    optimizer = torch.optim.SGD(model.parameters(), 1e-4)
 
     losses = get_losses("cases/mlp_1_losses")
 
@@ -80,7 +82,7 @@ def test_mlp_2() -> None:
     model.load_state_dict(initial_weights)
 
     loss_func = nn.MSELoss()
-    optimizer = torch.optim.SGD(model.parameters(), 0.0001, 0.9)
+    optimizer = torch.optim.SGD(model.parameters(), 1e-4, 0.9)
 
     losses = get_losses("cases/mlp_2_losses")
 
@@ -135,7 +137,7 @@ def test_mlp_3() -> None:
     model.load_state_dict(initial_weights)
 
     loss_func = nn.MSELoss()
-    optimizer = torch.optim.RMSprop(model.parameters(), 0.0001, 0.9)
+    optimizer = torch.optim.RMSprop(model.parameters(), 1e-4, 0.9)
 
     losses = get_losses("cases/mlp_3_losses")
 

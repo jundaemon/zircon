@@ -83,8 +83,8 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
             self.dL_dB[i] += dL_dz;
         }
 
-        /// calculates derivative of loss wrt to weights and biases using chain rule
-        /// the derivative of loss wrt to the input to this layer is returned and to be passed to the previous layer
+        /// calculates gradient of loss wrt to weights and biases using chain rule
+        /// the gradient of loss wrt to the input to this layer is returned and to be passed to the previous layer
         pub fn backward(self: *Self, dL_dY: [out]f32) [in]f32 {
             var dL_dX: [in]f32 = @splat(0);
             switch (f) {

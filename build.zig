@@ -36,7 +36,11 @@ pub fn build(b: *std.Build) void {
     mlp.addImport("optim", optim);
 
     const mlp_tests = b.addTest(.{ .root_module = mlp });
+    const optim_tests = b.addTest(.{ .root_module = optim });
     const run_mlp_tests = b.addRunArtifact(mlp_tests);
+    const run_optim_tests = b.addRunArtifact(optim_tests);
+
     const test_step = b.step("test", "run tests");
     test_step.dependOn(&run_mlp_tests.step);
+    test_step.dependOn(&run_optim_tests.step);
 }
