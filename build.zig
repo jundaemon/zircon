@@ -33,6 +33,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "mlp", .module = mlp },
         },
     });
+    function.addImport("mlp", mlp);
     mlp.addImport("optim", optim);
 
     const mlp_tests = b.addTest(.{ .root_module = mlp });

@@ -1,23 +1,72 @@
 const std = @import("std");
 const math = std.math;
 
+const mlp = @import("mlp");
+const MLPConfig = mlp.MLPConfig;
+const MLP = mlp.MLP;
+
 pub const Activation = enum { None, Tanh, ReLU };
+pub const LossFunction = enum { MSE };
 
-pub fn MSE(comptime out: usize, y: [out]f32, y_cap: [out]f32) f32 {
-    if (out < 1) @compileError("out should be 1 or more");
+pub fn Loss(comptime mlp_config: MLPConfig, comptime loss_function: LossFunction) type {
+    mlp_config.check();
+    const num_layers = mlp_config.outs.len;
+    const dimensions = [1]usize{mlp_config.in} ++ mlp_config.outs;
+    const model_out = dimensions[num_layers];
 
-    var mse: f32 = 0;
-    for (0..out) |i| mse += math.pow(f32, y[i] - y_cap[i], 2);
-    mse /= out;
+    var dL_dX_types: [num_layers]type = undefined;
+    for (0..num_layers) |i| dL_dX_types[i] = [dimensions[i]]f32;
 
-    return mse;
-}
+    const dL_dXs = @Tuple(&dL_dX_types);
 
-pub fn MSE_grad(comptime out: usize, y: [out]f32, y_cap: [out]f32) [out]f32 {
-    if (out < 1) @compileError("out should be 1 or more");
+    return struct {
+        model_ptr: *MLP(mlp_config),
 
-    var mse_grad: [out]f32 = undefined;
-    for (0..out) |i| mse_grad[i] = (y[i] - y_cap[i]) * 2 / out;
+        const Self = @This();
+        pub fn init(model_ptr: *MLP(mlp_config)) Self {
+            return .{ .model_ptr = model_ptr };
+        }
 
-    return mse_grad;
+        pub fn eval(self: Self, y: [model_out]f32, y_cap: [model_out]f32) struct {
+            model_ptr: *MLP(mlp_config),
+            item: f32,
+            dL_dy_cap: [model_out]f32,
+
+            const Self_ = @This();
+            pub fn backward(self_: Self_) void {
+                const model_ptr = self_.model_ptr;
+                const dL_dy_cap = self_.dL_dy_cap;
+
+                var incremental_dL_dX: dL_dXs = undefined;
+                inline for (0..num_layers) |i| {
+                    const reverse_i = num_layers - i - 1;
+                    if (reverse_i == num_layers - 1) {
+                        incremental_dL_dX[reverse_i] = model_ptr.layers[reverse_i].backward(dL_dy_cap);
+                    } else {
+                        incremental_dL_dX[reverse_i] = model_ptr.layers[reverse_i].backward(incremental_dL_dX[reverse_i + 1]);
+                    }
+                }
+            }
+        } {
+            switch (loss_function) {
+                .MSE => {
+                    var mse: f32 = 0;
+                    var dL_dy_cap: [model_out]f32 = undefined;
+                    for (0..model_out) |i| {
+                        const ae = y[i] - y_cap[i];
+
+                        mse += math.pow(f32, ae, 2);
+                        dL_dy_cap[i] = ae * 2 / model_out;
+                    }
+                    mse /= model_out;
+
+                    return .{
+                        .model_ptr = self.model_ptr,
+                        .item = mse,
+                        .dL_dy_cap = dL_dy_cap,
+                    };
+                },
+            }
+        }
+    };
 }
