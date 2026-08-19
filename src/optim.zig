@@ -7,6 +7,11 @@ const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;
 
 pub const OptimizerAlgo = enum { SGD, RMSprop, Adam };
+/// configurations for Optimizer
+///
+/// properties:
+/// mlp_config -> reference MLP architecture to build struct around
+/// optimizer -> user selected optimizer algorithm
 pub const OptimizerConfig = struct {
     mlp_config: MLPConfig,
     optimizer: OptimizerAlgo,
@@ -26,15 +31,18 @@ const default_beta = 0.9;
 const default_beta_2 = 0.999;
 const default_epsilon = 1e-8;
 
+/// options for if user selects stochastic gradient descent as optimizer algorithm
 pub const SGDOpts = struct {
     lr: f32 = default_lr,
     momentum: f32 = default_momentum,
 };
+/// options for if user selects root mean square propagation as optimizer algorithm
 pub const RMSpropOpts = struct {
     lr: f32 = default_lr,
     alpha: f32 = default_alpha,
     epsilon: f32 = default_epsilon,
 };
+/// options for if user selects adaptive momentum estimation as optimizer algorithm
 pub const AdamOpts = struct {
     lr: f32 = default_lr,
     beta: f32 = default_beta,
@@ -42,6 +50,10 @@ pub const AdamOpts = struct {
     epsilon: f32 = default_epsilon,
 };
 
+/// uses the model architecture to build an interface for model optimization
+///
+/// arguments:
+/// optim_config -> comptime configurations containing data like parent MLP architecture and user selected optimizer algorithm
 pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
     const mlp_config = optim_config.mlp_config;
 
@@ -71,13 +83,18 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
             B_v: ?Flats,
 
             const Self = @This();
-            /// in opts,
-            /// lr determines the step size in the direction of gradient to take
-            /// if given, it has to be more than 0, if not given, it defaults to 1e-3
+            /// if .SGD was selected as the optimizer algorithm, this initializes and returns a struct instance
             ///
-            /// momentum determines the significance of past velocities in calculating current velocities
-            /// if not given, normal stochastic gradient descent is used to update weights and biases
-            /// if given and more than 0, stochastic gradient descent with momentum is used to update weights and biases
+            /// arguments:
+            /// model_ptr -> pointer to the parent MLP, used in .zero_grad and .step
+            /// opts -> user passed options for stochastic gradient descent
+            ///
+            /// in opts,
+            /// momentum determines the significance of past velocities when calculating the current velocity
+            /// if momentum is not given, then properties .W_v and .B_v won't be instantiated and stochastic gradient descent is performed in .step
+            /// but if momentum is given, then properties .W_v and .B_v are initialized as 0 and stochastic gradient descent with momentum is performed in .step
+            ///
+            /// if lr or momentum is given, then they have to be more than 0 else an OptimizerError is returned
             pub fn init(model_ptr: *MLP(mlp_config), opts: SGDOpts) OptimizerError!Self {
                 const lr = opts.lr;
                 const momentum = opts.momentum;
@@ -113,6 +130,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 };
             }
 
+            /// resets all gradients in the parent model to 0
             pub fn zero_grad(self: Self) void {
                 const model_ptr = self.model_ptr;
 
@@ -125,6 +143,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 }
             }
 
+            /// uses the calculated gradients from loss.backward() to update the weights and biases within the model
             pub fn step(self: *Self) void {
                 const model_ptr = self.model_ptr;
                 const lr = self.lr;
@@ -188,16 +207,17 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
             B_moving_mean: Flats,
 
             const Self = @This();
+            /// if .RMSprop was selected as the optimizer algorithm, this initializes and returns a struct instance
+            ///
+            /// arguments:
+            /// model_ptr -> pointer to the parent MLP, used in .zero_grad and .step
+            /// opts -> user pass options for root mean squared propagation
+            ///
             /// in opts,
-            /// lr determines the step size in the direction of gradient to take
-            /// if given, it has to be more than 0, if not given, it defaults to 1e-3
+            /// alpha determines the significance of past squared gradients compared to the current squared gradients when calculating the moving mean
+            /// epsilon prevents division by zero errors
             ///
-            /// alpha controls how significant past squared gradients are
-            /// compared to the current squared gradients in calculating the moving mean
-            /// if given, it has to be more than 0, if not given, it defaults to 0.99
-            ///
-            /// epsilon is a safety to prevent division by zero errors
-            /// if given, it has to be more than 0, if not given, it defaults to 1e-8
+            /// if lr, alpha or epsilon is given, then they have to be more than 0 else an OptimizerError is returned
             pub fn init(model_ptr: *MLP(mlp_config), opts: RMSpropOpts) OptimizerError!Self {
                 const lr = opts.lr;
                 const alpha = opts.alpha;
@@ -228,6 +248,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 };
             }
 
+            /// resets all gradients in the parent model to 0
             pub fn zero_grad(self: Self) void {
                 const model_ptr = self.model_ptr;
 
@@ -240,6 +261,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 }
             }
 
+            /// uses the calculated gradients from loss.backward() to update the weights and biases within the model
             pub fn step(self: *Self) void {
                 const model_ptr = self.model_ptr;
                 const lr = self.lr;
@@ -291,18 +313,18 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
             t: usize = 1,
 
             const Self = @This();
+            /// if .Adam was selected as the optimizer algorithm, this initializes and returns a struct instance
+            ///
+            /// arguments:
+            /// model_ptr -> pointer to the parent MLP, used in .zero_grad and .step
+            /// opts -> user pass options for adaptive momentum estimation
+            ///
             /// in opts,
-            /// lr determines the step size in the direction of gradient to take
-            /// if given, it has to be more than 0, if not given, it defaults to 1e-3
+            /// beta is used in the first moment estimate, which is the velocity component of update
+            /// beta_2 is used in the second moment estimate, which is the gradient dependent scaling of lr
+            /// epsilon prevents division by zero errors
             ///
-            /// beta is the decay rate for the first moment estimate, which is the momentum of update
-            /// if given, it has to be more than 0, if not given, it defaults to 0.9
-            ///
-            /// beta_2 is the decay rate for the second moment estimate, which is the gradient dependent scaling of learning rate
-            /// if given, it has to be more than 0, if not given, it defaults to 0.999
-            ///
-            /// epsilon is a safety to prevent division by zero errors
-            /// if given, it has to be more than 0, if not given, it defaults to 1e-8
+            /// if lr, beta, beta_2 or epsilon is given, then they have to be more than 0 else an OptimizerError is returned
             pub fn init(model_ptr: *MLP(mlp_config), opts: AdamOpts) OptimizerError!Self {
                 const lr = opts.lr;
                 const beta = opts.beta;
@@ -338,6 +360,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 };
             }
 
+            /// resets all gradients in the parent model to 0
             pub fn zero_grad(self: Self) void {
                 const model_ptr = self.model_ptr;
 
@@ -350,6 +373,7 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
                 }
             }
 
+            /// uses the calculated gradients from loss.backward() to update the weights and biases within the model
             pub fn step(self: *Self) void {
                 const model_ptr = self.model_ptr;
                 const lr = self.lr;

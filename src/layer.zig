@@ -9,6 +9,13 @@ fn custom_rand_f32(rand: Random, bound: f32) f32 {
     return rand.float(f32) * bound * 2 - bound;
 }
 
+/// a consolidation of all data related to a layer and its neurons including:
+/// weights, gradient of weights, biases, gradients of biases, the output and input at a certain epoch
+///
+/// arguments:
+/// in -> number of in channels to the layer
+/// out -> number of out channels to the layer
+/// f -> activation function used for all neurons in the layer
 pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) type {
     return struct {
         W: [out][in]f32,
@@ -19,9 +26,15 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
         X: [in]f32 = @splat(0),
 
         const Self = @This();
+        /// initializes all weights and biases of neurons within the layer and returns a Layer struct instance
+        ///
+        /// if the layer uses a symmetric activation function, then weights are initialized using Xavier uniform distribution
+        /// if the layer uses an asymmetric activation function, then weights are initialized using He uniform distribution in fan in mode
+        /// biases are initialized using LeCun uniform distribution regardless
+        ///
+        /// arguments:
+        /// rand -> Zig's Random
         pub fn init(rand: Random) Self {
-            // if the activation function for a layer is symmetrical, Xavier uniform distribution is used to initialize weights
-            // if the activation function for a layer is asymmetrical, Kaiming uniform distribution in fan in mode is used to initialize weights
             const w_bound = switch (f) {
                 .None, .Tanh => math.sqrt(6 / @as(f32, in + out)),
                 .ReLU => math.sqrt(6 / @as(f32, in)),
@@ -45,8 +58,11 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
             return .{ .W = W, .B = B };
         }
 
-        /// performs a forward pass with result depending on the activation function of neurons in the layer
-        /// the output of the layer is returned and to be passed to the next layer
+        /// performs a forward pass through the layer and returns the output
+        /// this method also saves the input to the layer for use in loss.backward()
+        ///
+        /// arguments:
+        /// X -> input to the neurons in the layer
         pub fn forward(self: *Self, X: [in]f32) [out]f32 {
             self.X = X;
             self.Y = @splat(0);
@@ -75,6 +91,12 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
             return self.Y;
         }
 
+        /// calculates derivatives of loss wrt the weights, biases and inputs to the layer using chain rule
+        ///
+        /// arguments:
+        /// i -> the 0-indexed neuron number
+        /// dL_dz -> the derivative of loss wrt the pre-activation output of the neuron
+        /// dL_dX -> the derivative of loss wrt the input to the neuron, to be accumulated through all neurons
         fn backward_helper(self: *Self, i: usize, dL_dz: f32, dL_dX: []f32) void {
             for (0..in) |j| {
                 self.dL_dW[i][j] += self.X[j] * dL_dz;
@@ -83,8 +105,10 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
             self.dL_dB[i] += dL_dz;
         }
 
-        /// calculates gradient of loss wrt to weights and biases using chain rule
-        /// the gradient of loss wrt to the input to this layer is returned and to be passed to the previous layer
+        /// performs backpropagation through the layer and returns the derivative of loss wrt the input
+        ///
+        /// arguments:
+        /// dL_dY -> derivative of loss wrt the output of neurons in the layer
         pub fn backward(self: *Self, dL_dY: [out]f32) [in]f32 {
             var dL_dX: [in]f32 = @splat(0);
             switch (f) {
@@ -100,7 +124,7 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
                 },
                 .ReLU => {
                     for (0..out) |i| {
-                        // derivative of y wrt to z in this case is the derivative of relu = {1: z > 0} | {0: z <= 0}
+                        // derivative of y wrt to z in this case is the derivative of relu = I(z > 0)
                         const dL_dz = dL_dY[i] * if (self.Y[i] > 0) @as(f32, 1) else 0;
                         self.backward_helper(i, dL_dz, &dL_dX);
                     }
