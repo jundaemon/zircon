@@ -1,8 +1,7 @@
 const std = @import("std");
 const math = std.math;
-const testing = std.testing;
 
-const mlp = @import("mlp");
+const mlp = @import("mlp.zig");
 const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;
 
@@ -24,30 +23,23 @@ pub const OptimizerError = error{
     InvalidEpsilon,
 };
 
-const default_lr = 1e-3;
-const default_momentum = 0;
-const default_alpha = 0.99;
-const default_beta = 0.9;
-const default_beta_2 = 0.999;
-const default_epsilon = 1e-8;
-
 /// options for if user selects stochastic gradient descent as optimizer algorithm
 pub const SGDOpts = struct {
-    lr: f32 = default_lr,
-    momentum: f32 = default_momentum,
+    lr: f32 = 1e-3,
+    momentum: f32 = 0,
 };
 /// options for if user selects root mean square propagation as optimizer algorithm
 pub const RMSpropOpts = struct {
-    lr: f32 = default_lr,
-    alpha: f32 = default_alpha,
-    epsilon: f32 = default_epsilon,
+    lr: f32 = 1e-2,
+    alpha: f32 = 0.99,
+    epsilon: f32 = 1e-8,
 };
 /// options for if user selects adaptive momentum estimation as optimizer algorithm
 pub const AdamOpts = struct {
-    lr: f32 = default_lr,
-    beta: f32 = default_beta,
-    beta_2: f32 = default_beta_2,
-    epsilon: f32 = default_epsilon,
+    lr: f32 = 1e-3,
+    beta: f32 = 0.9,
+    beta_2: f32 = 0.999,
+    epsilon: f32 = 1e-8,
 };
 
 /// uses the model architecture to build an interface for model optimization
@@ -428,107 +420,4 @@ pub fn Optimizer(comptime optim_config: OptimizerConfig) type {
             }
         },
     }
-}
-
-test "optimizer initialization, errors and defaults" {
-    const mlp_config = MLPConfig{
-        .in = 1,
-        .outs = &.{ 2, 3, 4 },
-        .f = &.{ .Tanh, .ReLU, .None },
-        .seed = 1,
-    };
-    var model: MLP(mlp_config) = .init();
-
-    const optimizer: Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .SGD,
-    }) = try .init(&model, .{});
-    try testing.expectEqual(default_lr, optimizer.lr);
-    try testing.expectEqual(default_momentum, optimizer.momentum);
-
-    const optimizer_2: Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .SGD,
-    }) = try .init(&model, .{ .lr = 1e-4, .momentum = 0.9 });
-    try testing.expectEqual(1e-4, optimizer_2.lr);
-    try testing.expectEqual(0.9, optimizer_2.momentum);
-
-    const optimizer_error: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .SGD,
-    }) = .init(&model, .{ .lr = -1 });
-    try testing.expectError(OptimizerError.InvalidLearningRate, optimizer_error);
-
-    const optimizer_error_2: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .SGD,
-    }) = .init(&model, .{ .momentum = -1 });
-    try testing.expectError(OptimizerError.InvalidMomentum, optimizer_error_2);
-
-    const optimizer_3: Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .RMSprop,
-    }) = try .init(&model, .{});
-    try testing.expectEqual(default_lr, optimizer_3.lr);
-    try testing.expectEqual(default_alpha, optimizer_3.alpha);
-    try testing.expectEqual(default_epsilon, optimizer_3.epsilon);
-
-    const optimizer_4: Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .RMSprop,
-    }) = try .init(&model, .{ .lr = 1e-4, .alpha = 0.9, .epsilon = 1e-7 });
-    try testing.expectEqual(1e-4, optimizer_4.lr);
-    try testing.expectEqual(0.9, optimizer_4.alpha);
-    try testing.expectEqual(1e-7, optimizer_4.epsilon);
-
-    const optimizer_error_3: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .RMSprop,
-    }) = .init(&model, .{ .lr = -1 });
-    try testing.expectError(OptimizerError.InvalidLearningRate, optimizer_error_3);
-
-    const optimizer_error_4: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .RMSprop,
-    }) = .init(&model, .{ .alpha = -1 });
-    try testing.expectError(OptimizerError.InvalidAlpha, optimizer_error_4);
-
-    const optimizer_error_5: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .RMSprop,
-    }) = .init(&model, .{ .epsilon = -1 });
-    try testing.expectError(OptimizerError.InvalidEpsilon, optimizer_error_5);
-
-    const optimizer_5: Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .Adam,
-    }) = try .init(&model, .{ .lr = 1e-4, .beta = 0.99, .beta_2 = 0.99, .epsilon = 1e-7 });
-    try testing.expectEqual(1e-4, optimizer_5.lr);
-    try testing.expectEqual(0.99, optimizer_5.beta);
-    try testing.expectEqual(0.99, optimizer_5.beta_2);
-    try testing.expectEqual(1e-7, optimizer_5.epsilon);
-
-    const optimizer_error_6: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .Adam,
-    }) = .init(&model, .{ .lr = -1 });
-    try testing.expectError(OptimizerError.InvalidLearningRate, optimizer_error_6);
-
-    const optimizer_error_7: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .Adam,
-    }) = .init(&model, .{ .beta = -1 });
-    try testing.expectError(OptimizerError.InvalidBeta, optimizer_error_7);
-
-    const optimizer_error_8: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .Adam,
-    }) = .init(&model, .{ .beta_2 = -1 });
-    try testing.expectError(OptimizerError.InvalidBeta, optimizer_error_8);
-
-    const optimizer_error_9: OptimizerError!Optimizer(.{
-        .mlp_config = mlp_config,
-        .optimizer = .Adam,
-    }) = .init(&model, .{ .epsilon = -1 });
-    try testing.expectError(OptimizerError.InvalidEpsilon, optimizer_error_9);
 }

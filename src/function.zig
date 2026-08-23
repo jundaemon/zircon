@@ -1,7 +1,7 @@
 const std = @import("std");
 const math = std.math;
 
-const mlp = @import("mlp");
+const mlp = @import("mlp.zig");
 const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;
 

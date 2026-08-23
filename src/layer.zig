@@ -2,7 +2,7 @@ const std = @import("std");
 const math = std.math;
 const Random = std.Random;
 
-const function = @import("function");
+const function = @import("function.zig");
 const Activation = function.Activation;
 
 fn custom_rand_f32(rand: Random, bound: f32) f32 {
