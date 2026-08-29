@@ -387,3 +387,52 @@ def test_mlp_7() -> None:
     )
     expected_final_weights = model.state_dict()
     torch.testing.assert_close(actual_final_weights, expected_final_weights)
+
+
+def test_mlp_8() -> None:
+    in_channels = 2
+    out_channels = [2, 2, 1]
+
+    model = nn.Sequential()
+    model.add_module("layer_0", nn.Linear(2, 2))
+    model.add_module("sigmoid_0", nn.Sigmoid())
+    model.add_module("layer_1", nn.Linear(2, 2))
+    model.add_module("sigmoid_1", nn.Sigmoid())
+    model.add_module("layer_2", nn.Linear(2, 1))
+
+    initial_weights = get_weights(
+        "cases/mlp_8_initial_weights", in_channels, out_channels
+    )
+    model.load_state_dict(initial_weights)
+
+    loss_func = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    losses = get_losses("cases/mlp_8_losses")
+
+    pred = model(torch.tensor([1, 1], dtype=torch.float32))
+    expected_loss = loss_func(pred, torch.tensor([0], dtype=torch.float32))
+    torch.testing.assert_close(losses[0], expected_loss)
+
+    expected_loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+
+    actual_updated_weights = get_weights(
+        "cases/mlp_8_updated_weights", in_channels, out_channels
+    )
+    expected_updated_weights = model.state_dict()
+    torch.testing.assert_close(actual_updated_weights, expected_updated_weights)
+
+    pred_prime = model(torch.tensor([0, 1], dtype=torch.float32))
+    expected_loss_prime = loss_func(pred_prime, torch.tensor([1], dtype=torch.float32))
+    torch.testing.assert_close(losses[1], expected_loss_prime)
+
+    expected_loss_prime.backward()
+    optimizer.step()
+
+    actual_final_weights = get_weights(
+        "cases/mlp_8_final_weights", in_channels, out_channels
+    )
+    expected_final_weights = model.state_dict()
+    torch.testing.assert_close(actual_final_weights, expected_final_weights)

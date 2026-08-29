@@ -327,3 +327,48 @@ test "mlp double passes 7" {
     optimizer.step();
     try model.save(io, "tests/cases/mlp_7_final_weights");
 }
+
+test "mlp double passes 8" {
+    const io = testing.io;
+    var file: Io.File = try Io.Dir.cwd().createFile(io, "tests/cases/mlp_8_losses", .{});
+    defer file.close(io);
+
+    const mlp_config = MLPConfig{
+        .in = 2,
+        .outs = &.{ 2, 2, 1 },
+        .f = &.{ .Sigmoid, .Sigmoid, .None },
+        .seed = 1,
+    };
+    var model: MLP(mlp_config) = .init();
+    try model.save(io, "tests/cases/mlp_8_initial_weights");
+
+    const loss_fn: Loss(.{
+        .mlp_config = mlp_config,
+        .loss_function = .BCE,
+    }) = .init(&model);
+    var optimizer: Optimizer(.{
+        .mlp_config = mlp_config,
+        .optimizer = .Adam,
+    }) = try .init(&model, .{});
+
+    const pred = model.forward(.{ 1, 1 });
+    const loss = loss_fn.eval(pred, .{0});
+    var buf: [30]u8 = undefined;
+    const loss_str = try fmt.bufPrint(&buf, "{d}\n", .{loss.item});
+    try file.writeStreamingAll(io, loss_str);
+
+    loss.backward();
+    optimizer.step();
+    optimizer.zero_grad();
+    try model.save(io, "tests/cases/mlp_8_updated_weights");
+
+    const pred_ = model.forward(.{ 0, 1 });
+    const loss_ = loss_fn.eval(pred_, .{1});
+    var buf_: [30]u8 = undefined;
+    const loss_str_ = try fmt.bufPrint(&buf_, "{d}\n", .{loss_.item});
+    try file.writeStreamingAll(io, loss_str_);
+
+    loss_.backward();
+    optimizer.step();
+    try model.save(io, "tests/cases/mlp_8_final_weights");
+}

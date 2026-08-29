@@ -36,7 +36,7 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
         /// rand -> Zig's Random
         pub fn init(rand: Random) Self {
             const w_bound = switch (f) {
-                .None, .Tanh => math.sqrt(6 / @as(f32, in + out)),
+                .None, .Tanh, .Sigmoid => math.sqrt(6 / @as(f32, in + out)),
                 .ReLU => math.sqrt(6 / @as(f32, in)),
             };
             const b_bound = 1 / math.sqrt(@as(f32, in));
@@ -63,6 +63,8 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
         ///
         /// arguments:
         /// X -> input to the neurons in the layer
+        ///
+        /// Sigmoid uses the Pytorch implementation, which prevents the output from exploding to extremely large values
         pub fn forward(self: *Self, X: [in]f32) [out]f32 {
             self.X = X;
             self.Y = @splat(0);
@@ -84,6 +86,12 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
                     for (0..out) |i| {
                         const z = self.Y[i];
                         self.Y[i] = if (z > 0) z else 0;
+                    }
+                },
+                .Sigmoid => {
+                    for (0..out) |i| {
+                        const z = self.Y[i];
+                        self.Y[i] = if (z >= 0) 1 / (1 + math.exp(-z)) else math.exp(z) / (1 + math.exp(z));
                     }
                 },
             }
@@ -117,15 +125,23 @@ pub fn Layer(comptime in: usize, comptime out: usize, comptime f: Activation) ty
                 },
                 .Tanh => {
                     for (0..out) |i| {
-                        // derivative of y wrt to z in this case is the derivative of tanh = 1 - tanh^2(z)
+                        // derivative of y wrt z in this case is the derivative of tanh = 1 - tanh^2(z)
                         const dL_dz = dL_dY[i] * (1 - math.pow(f32, self.Y[i], 2));
                         self.backward_helper(i, dL_dz, &dL_dX);
                     }
                 },
                 .ReLU => {
                     for (0..out) |i| {
-                        // derivative of y wrt to z in this case is the derivative of relu = I(z > 0)
+                        // derivative of y wrt z in this case is the derivative of relu = I(z > 0)
                         const dL_dz = dL_dY[i] * if (self.Y[i] > 0) @as(f32, 1) else 0;
+                        self.backward_helper(i, dL_dz, &dL_dX);
+                    }
+                },
+                .Sigmoid => {
+                    for (0..out) |i| {
+                        // derivative of y wrt z in this case is the derivative of sigmoid = f(z) * (1 - f(z)) where f is the sigmoid function
+                        const y = self.Y[i];
+                        const dL_dz = dL_dY[i] * y * (1 - y);
                         self.backward_helper(i, dL_dz, &dL_dX);
                     }
                 },

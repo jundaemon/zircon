@@ -1,12 +1,13 @@
 const std = @import("std");
 const math = std.math;
+const mem = std.mem;
 
 const mlp = @import("mlp.zig");
 const MLPConfig = mlp.MLPConfig;
 const MLP = mlp.MLP;
 
-pub const Activation = enum { None, Tanh, ReLU };
-pub const LossFunction = enum { MSE };
+pub const Activation = enum { None, Tanh, ReLU, Sigmoid };
+pub const LossFunction = enum { MSE, BCE };
 /// configurations for Loss
 ///
 /// properties:
@@ -46,9 +47,13 @@ pub fn Loss(comptime loss_config: LossConfig) type {
         /// this anonymous struct instance allows users to retrieve loss through the property .item and perform backpropagation through .backward
         ///
         /// arguments:
-        /// y -> the expected output
         /// y_cap -> the prediction made by the model
-        pub fn eval(self: Self, y: [model_out]f32, y_cap: [model_out]f32) struct {
+        /// y -> the expected output
+        ///
+        /// BCE loss performs BCEWithLogitsLoss in Pytorch with all defaults
+        /// this means that y_cap is the un-normalized outputs of the model, do not put a Sigmoid after the last layer of the MLP
+        /// the sigmoid within BCE also uses Pytorch's implementation, preventing outputs from exploding to large values
+        pub fn eval(self: Self, y_cap: [model_out]f32, y: [model_out]f32) struct {
             model_ptr: *MLP(mlp_config),
             item: f32,
             dL_dy_cap: [model_out]f32,
@@ -73,16 +78,31 @@ pub fn Loss(comptime loss_config: LossConfig) type {
                     var mse: f32 = 0;
                     var dL_dy_cap: [model_out]f32 = undefined;
                     for (0..model_out) |i| {
-                        const ae = y[i] - y_cap[i];
-
-                        mse += math.pow(f32, ae, 2);
-                        dL_dy_cap[i] = ae * 2 / model_out;
+                        mse += math.pow(f32, y[i] - y_cap[i], 2);
+                        dL_dy_cap[i] = (y_cap[i] - y[i]) * 2 / model_out;
                     }
                     mse /= model_out;
 
                     return .{
                         .model_ptr = self.model_ptr,
                         .item = mse,
+                        .dL_dy_cap = dL_dy_cap,
+                    };
+                },
+                .BCE => {
+                    var bce: f32 = 0;
+                    var dL_dy_cap: [model_out]f32 = undefined;
+                    for (0..model_out) |i| {
+                        bce += @max(y_cap[i], 0) - y_cap[i] * y[i] + @log(1.0 + math.exp(-@abs(y_cap[i])));
+                        dL_dy_cap[i] = if (y_cap[i] >= 0) 1 / (1 + math.exp(-y_cap[i])) else math.exp(y_cap[i]) / (1 + math.exp(y_cap[i]));
+                        dL_dy_cap[i] -= y[i];
+                        dL_dy_cap[i] /= model_out;
+                    }
+                    bce /= model_out;
+
+                    return .{
+                        .model_ptr = self.model_ptr,
+                        .item = bce,
                         .dL_dy_cap = dL_dy_cap,
                     };
                 },
