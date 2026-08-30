@@ -1,10 +1,10 @@
 This was a project written for the purpose of learning about weight initialization, forward passes, backpropagation, loss calculation and network optimization. The library has features like:
-- Building of Multi Layer Perceptrons
 - Various symmetric (Tanh, Sigmoid) and asymmetric (ReLU) activation functions
 - Conditional weight initialization (Xavier and He initialization)
 - Various optimizers (SGD, SGD with momentum, RMSprop, Adam)
 - Pytorch like API for forward passes, loss calculation, backpropagation and optimization
 - Saving and loading of model weights
+- No heap allocations
 
 ## Usage
 You should not use this in production, but if you would like to try it out, first run
